@@ -8,6 +8,7 @@
   <extensions defaultExtensionNs="com.intellij">
     <projectConfigurable instance="com.my.coder.settings.GeneratorSettingsConfigurable" id="com.my.coder.settings" displayName="MyBatis Generator"/>
     <postStartupActivity implementation="com.my.coder.StartupImporter"/>
+    <editorNotificationProvider implementation="com.my.coder.TemplatePreviewNotificationProvider"/>
   </extensions>
   <actions>
     <action id="com.my.coder.GenerateMyBatisCodeAction" class="com.my.coder.GenerateMyBatisCodeAction" text="Generate MyBatis Code" description="Generate code from generator.yaml">
@@ -18,13 +19,9 @@
     </action>
     <action id="com.my.coder.GenerateFromIdeaDatabaseAction" class="com.my.coder.GenerateFromIdeaDatabaseAction" text="Generate From IDEA Database" description="Generate code using selected tables from Database view">
       <add-to-group group-id="ToolsMenu" anchor="last"/>
-      <add-to-group group-id="DatabaseViewPopupMenu" anchor="last"/>
+      <add-to-group group-id="DatabaseViewPopupMenu" anchor="first"/>
       <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt D"/>
       <keyboard-shortcut keymap="Mac OS X" first-keystroke="meta alt D"/>
-    </action>
-    <action id="com.my.coder.PreviewTemplateAction" class="com.my.coder.PreviewTemplateAction" text="预览模板生成文件" description="预览该模板渲染后的生成内容">
-      <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
-      <add-to-group group-id="EditorPopupMenu" anchor="last"/>
     </action>
   </actions>
 </idea-plugin>

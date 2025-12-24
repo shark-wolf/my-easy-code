@@ -71,8 +71,10 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
     private val useLombokCb = JCheckBox("使用 Lombok", true)
     
     init {
-        title = "MyBatis Quick Generate"
+        title = "My Easy Code Quick Generate"
         isModal = true
+        setOKButtonText("Create")
+        setCancelButtonText("Cancel")
         baseDirField.text = project.basePath ?: ""
         val root = project.basePath?.let { Path.of(it).resolve("my-easy-code").resolve("templates").toString() } ?: ""
         templateRootField.text = root

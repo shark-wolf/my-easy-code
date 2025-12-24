@@ -787,6 +787,10 @@ object Generator {
                 val msg = errors.joinToString("\n")
                 com.intellij.openapi.ui.Messages.showErrorDialog(project, msg, "生成错误详情")
             } catch (_: Throwable) {}
+        } else {
+            try {
+                com.intellij.openapi.ui.Messages.showInfoMessage(project, "已生成文件数: $generatedCount", "生成完成")
+            } catch (_: Throwable) {}
         }
     }
 
