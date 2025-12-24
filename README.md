@@ -92,3 +92,6 @@ templates:
 - 构建：`./gradlew.bat build -x test`
 - 打包：`buildPlugin` 产出 `build/distributions/*.zip`
 - 安装：主 IDEA `Settings -> Plugins -> Install Plugin from Disk...`
+
+## 许可
+- 本项目采用 MIT 开源许可证，详见 `LICENSE` 文件

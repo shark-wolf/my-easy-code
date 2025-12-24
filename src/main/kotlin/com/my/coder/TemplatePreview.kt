@@ -26,7 +26,7 @@ object TemplatePreview {
         val baseDir = st.baseDir ?: project.basePath ?: ""
         val name = guessName(file.name)
         val defOut = suggestOutput(name)
-        val table = resolveTable(project) ?: sampleTable(project)
+        val table = resolveTable(project) ?: sampleTable()
         val defPath = expand(defOut, baseDir, pkg, table)
         val defDir = Path.of(defPath).parent
         val defFile = Path.of(defPath).fileName.toString()
@@ -147,7 +147,7 @@ object TemplatePreview {
         }
         return null
     }
-    private fun sampleTable(project: Project): TableMeta {
+    private fun sampleTable(): TableMeta {
         val base = "sample"
         return TableMeta(base, toCamelUpper(base), emptyList(), null)
     }

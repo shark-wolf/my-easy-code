@@ -42,19 +42,15 @@ import com.intellij.ide.projectView.ProjectView
  * 支持按表选择在 DTO/VO 中排除的字段，并提供“一起生效”开关控制作用范围。
  */
 class QuickGenerateDialog(private val project: Project, private val initialSelectedNames: List<String>) : DialogWrapper(project) {
-    private val packageField = JBTextField()
     private val baseDirField = TextFieldWithBrowseButton()
     private val packageNameField = TextFieldWithBrowseButton()
     private val tablePrefixField = JBTextField()
     
     private val templateRootField = TextFieldWithBrowseButton()
-    private val dtoExcludeField = JBTextField()
-    private val voExcludeField = JBTextField()
     private val templateCheckBoxes = mutableListOf<JCheckBox>()
     private val templateOutputFields = mutableListOf<TextFieldWithBrowseButton>()
     private lateinit var templatePanel: JPanel
     private var allTemplates: List<TemplateItem> = emptyList()
-    private val previewArea = JTextArea(12, 60)
     private val typeOverrideField = JTextArea(4, 40)
     private val columnTypeOverrideField = JTextArea(4, 40)
     private val importBtn = JButton("导入插件模板到项目根目录")
@@ -78,7 +74,7 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         baseDirField.text = project.basePath ?: ""
         val root = project.basePath?.let { Path.of(it).resolve("my-easy-code").resolve("templates").toString() } ?: ""
         templateRootField.text = root
-        previewArea.isEditable = false
+        
         
         init()
     }
@@ -518,7 +514,7 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
 
     
 
-    private fun loadSelectedTemplateRaw(): String { return "" }
+    
 
     private fun selectedTemplates(): List<TemplateItem> {
         if (allTemplates.isEmpty()) allTemplates = scanTemplates(templateRoot())
