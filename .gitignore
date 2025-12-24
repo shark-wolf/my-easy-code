@@ -1,0 +1,15 @@
+# Gradle
+.gradle/
+build/
+
+# IntelliJ sandbox outputs
+build/idea-sandbox/
+
+# Logs
+hs_err_pid*.log
+replay_pid*.log
+*.log
+
+# IDE
+.idea/
+*.iml
