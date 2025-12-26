@@ -14,11 +14,10 @@
   - `config/GeneratorYaml.kt` 配置模型（含 `templateDirOverrides`、`tableEnumFields`）
   - `settings/GeneratorSettings*.kt` 设置项与持久化
 
-## 快速开始
+-## 快速开始
 - 启动沙箱：`./gradlew.bat runIde`
 - 菜单使用：
-  - `Tools -> Generate MyBatis Code`（从 `generator.yaml` 生成）
-  - `Tools -> Generate From IDEA Database`（在 Database 视图选中表后生成）
+-  - `Tools -> Generate From IDEA Database`（在 Database 视图选中表后生成）
 - 弹框使用：
   - 选择表、填写包名与基准目录
   - 在模板选择区为每个模板设置“保存路径”（仅目录）

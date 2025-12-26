@@ -1,8 +1,11 @@
 <idea-plugin>
   <id>com.my.coder</id>
-  <name>my-easy-code</name>
-  <vendor email="dev@example.com">Example</vendor>
-  <description>Generate MyBatis code with custom templates and output paths</description>
+  <name>My-Easy-Code</name>
+  <vendor email="dev@example.com">Neo</vendor>
+  <description>
+  Generate MyBatis code with custom templates and output paths.
+  github: https://github.com/shark-wolf/my-easy-code
+  </description>
   <depends>com.intellij.modules.platform</depends>
   <depends>com.intellij.database</depends>
   <extensions defaultExtensionNs="com.intellij">
@@ -11,12 +14,6 @@
     <editorNotificationProvider implementation="com.my.coder.TemplatePreviewNotificationProvider"/>
   </extensions>
   <actions>
-    <action id="com.my.coder.GenerateMyBatisCodeAction" class="com.my.coder.GenerateMyBatisCodeAction" text="Generate MyBatis Code" description="Generate code from generator.yaml">
-      <add-to-group group-id="ToolsMenu" anchor="last"/>
-      <add-to-group group-id="EditorPopupMenu" anchor="last"/>
-      <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt G"/>
-      <keyboard-shortcut keymap="Mac OS X" first-keystroke="meta alt G"/>
-    </action>
     <action id="com.my.coder.GenerateFromIdeaDatabaseAction" class="com.my.coder.GenerateFromIdeaDatabaseAction" text="Generate From IDEA Database" description="Generate code using selected tables from Database view">
       <add-to-group group-id="ToolsMenu" anchor="last"/>
       <add-to-group group-id="DatabaseViewPopupMenu" anchor="first"/>

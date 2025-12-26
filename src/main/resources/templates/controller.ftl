@@ -9,7 +9,10 @@ import ${voPackage}.${entityName}VO;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/${entityName?lower_case}")
+<#assign rawName = table.name>
+<#assign prefix = stripPrefix!"" >
+<#assign baseName = (rawName?starts_with(prefix))?then(rawName?substring(prefix?length), rawName)>
+@RequestMapping("/api/${baseName?replace('_','/')}")
 public class ${entityName}Controller {
     private final ${entityName}Service service;
 

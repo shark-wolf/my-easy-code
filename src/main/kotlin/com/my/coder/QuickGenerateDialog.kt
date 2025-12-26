@@ -41,7 +41,7 @@ import com.intellij.ide.projectView.ProjectView
  * 代码生成弹框：左侧为数据库表复选列表，右侧为配置区（包名/目录/模板选择/输出预览），
  * 支持按表选择在 DTO/VO 中排除的字段，并提供“一起生效”开关控制作用范围。
  */
-class QuickGenerateDialog(private val project: Project, private val initialSelectedNames: List<String>) : DialogWrapper(project) {
+class QuickGenerateDialog(private val project: Project, private val initialSelectedNames: List<String>, private val leftTitle: String? = null, private val leftTables: List<String>? = null) : DialogWrapper(project) {
     private val baseDirField = TextFieldWithBrowseButton()
     private val packageNameField = TextFieldWithBrowseButton()
     private val tablePrefixField = JBTextField()
@@ -49,18 +49,24 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
     private val templateRootField = TextFieldWithBrowseButton()
     private val templateCheckBoxes = mutableListOf<JCheckBox>()
     private val templateOutputFields = mutableListOf<TextFieldWithBrowseButton>()
+    private val templateFileNameFields = mutableListOf<JBTextField>()
+    private val templateExcludeFlags = mutableListOf<JCheckBox>()
     private lateinit var templatePanel: JPanel
     private var allTemplates: List<TemplateItem> = emptyList()
     private val typeOverrideField = JTextArea(4, 40)
     private val columnTypeOverrideField = JTextArea(4, 40)
     private val importBtn = JButton("导入插件模板到项目根目录")
     private val tableCheckboxes = mutableListOf<JCheckBox>()
-    private val applyBothCb = JCheckBox("排除字段在 DTO 和 VO 一起生效", false)
+    private val applyBothCb = JCheckBox("排除字段一起生效（限已选中排除的模板）", false)
     private val tableTabs = javax.swing.JTabbedPane()
     private val tableDtoExcludeMap = mutableMapOf<String, MutableSet<String>>()
     private val tableVoExcludeMap = mutableMapOf<String, MutableSet<String>>()
     private val tableBothExcludeMap = mutableMapOf<String, MutableSet<String>>()
     private val tableEnumFieldsMap = mutableMapOf<String, MutableSet<String>>()
+    private var vfsListener: com.intellij.openapi.vfs.VirtualFileListener? = null
+    private var enumTemplateCombo: javax.swing.JComboBox<String>? = null
+    private val tableEnumTplMap = mutableMapOf<String, MutableMap<String, String>>()
+    private val tableEnumOutDirMap = mutableMapOf<String, MutableMap<String, String>>()
     
     
     
@@ -72,7 +78,7 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         setOKButtonText("Create")
         setCancelButtonText("Cancel")
         baseDirField.text = project.basePath ?: ""
-        val root = project.basePath?.let { Path.of(it).resolve("my-easy-code").resolve("templates").toString() } ?: ""
+        val root = project.basePath?.let { Path.of(it).resolve("my-easy-code").resolve("templates").resolve("general").toString() } ?: ""
         templateRootField.text = root
         
         
@@ -91,13 +97,14 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         left.alignmentX = 0f
         tableCheckboxes.clear()
         val preselect = initialSelectedNames.toSet()
-        fetchAllTables().forEach { name ->
+        val leftNames = leftTables ?: fetchAllTables()
+        leftNames.forEach { name ->
             val cb = JCheckBox(name, preselect.isEmpty() || preselect.contains(name))
             cb.addActionListener { refreshTableTabs() }
             tableCheckboxes.add(cb)
             left.add(cb)
         }
-        left.border = BorderFactory.createTitledBorder("数据表")
+        left.border = BorderFactory.createTitledBorder(leftTitle ?: "数据表")
         leftContainer.alignmentX = 0f
         val leftScroll = JScrollPane(left)
         leftScroll.border = BorderFactory.createEmptyBorder()
@@ -137,6 +144,7 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         refreshTemplateList()
         rc.gridy = 4; rc.weighty = 0.5; rc.fill = GridBagConstraints.BOTH
         val templatesScroll = JScrollPane(templatePanel)
+        templatesScroll.horizontalScrollBarPolicy = javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
         templatesScroll.border = BorderFactory.createTitledBorder("模板选择")
         right.add(templatesScroll, rc)
         rc.gridy = 5; rc.weighty = 0.5; rc.fill = GridBagConstraints.BOTH
@@ -148,7 +156,7 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         bottomBar.add(applyBothCb)
         importBtn.text = "导入模板"
         importBtn.icon = com.intellij.icons.AllIcons.Actions.Download
-        importBtn.toolTipText = "将插件内置模板复制到 my-easy-code/templates"
+        importBtn.toolTipText = "将插件内置模板复制到 my-easy-code/templates/general，并创建 my-easy-code/templates/enums"
         bottomBar.add(importBtn)
         right.add(bottomBar, rc)
         val onSelChange = {
@@ -216,26 +224,116 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         })
         useLombokCb.isSelected = st.useLombok
         applyBothCb.isSelected = st.excludeApplyBoth
+        applyBothCb.addActionListener {
+            if (applyBothCb.isSelected) {
+                unifyExcludesAcrossTabs()
+                refreshTableTabs()
+            }
+        }
         typeOverrideField.toolTipText = "按数据库类型覆盖 Java 类型，每行 type=JavaType"
         columnTypeOverrideField.toolTipText = "按列名覆盖 Java 类型，每行 column=JavaType"
         importBtn.addActionListener {
             val base = project.basePath ?: return@addActionListener
-            val dest = Path.of(base).resolve("my-easy-code").resolve("templates")
-            Files.createDirectories(dest)
-            val names = listOf("entity","mapper","mapperXml","service","serviceImpl","controller","dto","vo")
+            val tplRoot = Path.of(base).resolve("my-easy-code").resolve("templates")
+            val destGeneral = tplRoot.resolve("general")
+            val enumsDir = tplRoot.resolve("enums")
+            try { Files.createDirectories(destGeneral) } catch (_: Throwable) {}
+            try { Files.createDirectories(enumsDir) } catch (_: Throwable) {}
+            val names = builtInTemplateBaseNames()
             names.forEach { n ->
                 val inStream = javaClass.classLoader.getResourceAsStream("templates/$n.ftl")
                 if (inStream != null) {
-                    val target = dest.resolve("$n.ftl")
+                    val target = destGeneral.resolve("$n.ftl")
                     Files.copy(inStream, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
                 }
             }
+            run {
+                val enumStream = javaClass.classLoader.getResourceAsStream("templates/enum.ftl")
+                if (enumStream != null) {
+                    val target = enumsDir.resolve("enum.ftl")
+                    Files.copy(enumStream, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                }
+            }
             refreshTemplateList()
-            val vDir = LocalFileSystem.getInstance().refreshAndFindFileByIoFile(dest.toFile())
+            val vDir = LocalFileSystem.getInstance().refreshAndFindFileByIoFile(tplRoot.toFile())
             vDir?.refresh(false, true)
             ProjectView.getInstance(project).refresh()
         }
+        val vm = com.intellij.openapi.vfs.VirtualFileManager.getInstance()
+        vfsListener = object : com.intellij.openapi.vfs.VirtualFileListener {
+            override fun fileCreated(event: com.intellij.openapi.vfs.VirtualFileEvent) {
+                val root = templateRoot().toString().replace('\\','/')
+                val p = event.file.path.replace('\\','/')
+                if (p.startsWith(root)) refreshTemplateList()
+            }
+            override fun fileDeleted(event: com.intellij.openapi.vfs.VirtualFileEvent) {
+                val root = templateRoot().toString().replace('\\','/')
+                val p = event.file.path.replace('\\','/')
+                if (p.startsWith(root)) refreshTemplateList()
+            }
+            override fun contentsChanged(event: com.intellij.openapi.vfs.VirtualFileEvent) {
+                val root = templateRoot().toString().replace('\\','/')
+                val p = event.file.path.replace('\\','/')
+                if (p.startsWith(root)) refreshTemplateList()
+            }
+            override fun fileMoved(event: com.intellij.openapi.vfs.VirtualFileMoveEvent) {
+                val root = templateRoot().toString().replace('\\','/')
+                val p = event.file.path.replace('\\','/')
+                if (p.startsWith(root)) refreshTemplateList()
+            }
+        }
+        vm.addVirtualFileListener(vfsListener!!)
         return wrapper
+    }
+    private fun builtInTemplateBaseNames(): List<String> {
+        return try {
+            val cl = javaClass.classLoader
+            val url = cl.getResource("templates")
+            if (url != null) {
+                when (url.protocol.lowercase()) {
+                    "file" -> {
+                        val dir = java.nio.file.Paths.get(url.toURI())
+                        java.nio.file.Files.list(dir).use { stream ->
+                            stream.filter { java.nio.file.Files.isRegularFile(it) && it.fileName.toString().lowercase().endsWith(".ftl") }
+                                .map { it.fileName.toString().substringBeforeLast('.') }
+                                .toList()
+                        }
+                    }
+                    "jar" -> {
+                        val s = url.toString()
+                        val bang = s.indexOf("!/")
+                        if (bang > 0) {
+                            val jarUrl = s.substring(4, bang) // remove "jar:"
+                            val fUrl = java.net.URL(jarUrl)
+                            val jarFile = java.nio.file.Paths.get(fUrl.toURI()).toFile()
+                            val names = mutableListOf<String>()
+                            java.util.jar.JarFile(jarFile).use { jf ->
+                                val en = jf.entries()
+                                while (en.hasMoreElements()) {
+                                    val e = en.nextElement()
+                                    val n = e.name
+                                    if (n.startsWith("templates/") && n.lowercase().endsWith(".ftl")) {
+                                        val base = java.nio.file.Paths.get(n).fileName.toString().substringBeforeLast('.')
+                                        names += base
+                                    }
+                                }
+                            }
+                            names
+                        } else emptyList()
+                    }
+                    else -> emptyList()
+                }
+            } else emptyList()
+        } catch (_: Throwable) {
+            emptyList()
+        }.ifEmpty { listOf("entity","mapper","mapperXml","service","serviceImpl","controller","dto","vo") }
+    }
+    override fun dispose() {
+        val vm = com.intellij.openapi.vfs.VirtualFileManager.getInstance()
+        val l = vfsListener
+        if (l != null) vm.removeVirtualFileListener(l)
+        vfsListener = null
+        super.dispose()
     }
     private fun updatePackageFromChooser() {
         val raw = packageNameField.text.trim().replace('\\','/')
@@ -258,8 +356,7 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         val author: String? = null
         allTemplates = scanTemplates(templateRoot())
         val selected = selectedTemplates()
-        var templates = if (selected.isNotEmpty()) selected else allTemplates
-        templates = templates.filterNot { it.name.equals("enum", true) }
+        val templates = selected.filterNot { it.name.equals("enum", true) }
         val dtoEx = emptyList<String>()
         val voEx = emptyList<String>()
         val typeOv = emptyMap<String, String>()
@@ -270,6 +367,13 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         val enumSel = tableEnumFieldsMap.mapValues { it.value.toList() }.filterValues { it.isNotEmpty() }
         val settings = project.service<GeneratorSettings>()
         val dirOverrides = settings.state.templateOutputs?.toMap()
+        val fileNameOverrides = settings.state.templateFileNames?.toMap()
+        val excludeTplNames = templateCheckBoxes.mapIndexedNotNull { idx, cb ->
+            if (cb.isSelected && idx < templateExcludeFlags.size && templateExcludeFlags[idx].isSelected && idx < allTemplates.size) allTemplates[idx].name else null
+        }
+        val enumTplName = project.service<GeneratorSettings>().state.enumTemplateName
+        val enumTplOverrides = tableEnumTplMap.mapValues { it.value.toMap() }.filterValues { it.isNotEmpty() }
+        val enumOutDirOverrides = tableEnumOutDirMap.mapValues { it.value.toMap() }.filterValues { it.isNotEmpty() }
         return GeneratorConfig(
             com.my.coder.config.Database("", "", "", ""),
             pkg,
@@ -284,14 +388,19 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
             useLombokCb.isSelected,
             generateMapper = true,
             generateMapperXml = true,
-            tableDtoExclude = if (!applyBothCb.isSelected && tableDtoEx.isNotEmpty()) tableDtoEx else null,
-            tableVoExclude = if (!applyBothCb.isSelected && tableVoEx.isNotEmpty()) tableVoEx else null,
-            tableBothExclude = if (applyBothCb.isSelected && tableBothEx.isNotEmpty()) tableBothEx else null,
+            tableDtoExclude = if (tableDtoEx.isNotEmpty()) tableDtoEx else null,
+            tableVoExclude = if (tableVoEx.isNotEmpty()) tableVoEx else null,
+            tableBothExclude = if (tableBothEx.isNotEmpty()) tableBothEx else null,
             excludeApplyBoth = applyBothCb.isSelected,
             applyMapperMapping = false,
             stripTablePrefix = tablePrefixField.text.trim().ifBlank { null },
             tableEnumFields = if (enumSel.isNotEmpty()) enumSel else null,
-            templateDirOverrides = dirOverrides
+            templateDirOverrides = dirOverrides,
+            templateFileNameOverrides = fileNameOverrides,
+            templateExcludeTemplates = excludeTplNames,
+            enumTemplateName = enumTplName,
+            tableEnumTemplateOverrides = if (enumTplOverrides.isNotEmpty()) enumTplOverrides else null,
+            tableEnumOutputDirOverrides = if (enumOutDirOverrides.isNotEmpty()) enumOutDirOverrides else null
         )
     }
 
@@ -309,7 +418,7 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
     }
     fun templateRoot(): Path {
         val base = project.basePath ?: ""
-        return Path.of(base).resolve("my-easy-code").resolve("templates")
+        return Path.of(base).resolve("my-easy-code").resolve("templates").resolve("general")
     }
     /**
      * 扫描模板目录，识别 ftl 文件并推断模板名称与默认输出路径。
@@ -320,10 +429,11 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         Files.walk(root).use { s ->
             s.filter { Files.isRegularFile(it) && it.fileName.toString().lowercase().endsWith(".ftl") }
                 .forEach { f ->
-                    val name = guessName(f.fileName.toString())
+                    val name = f.fileName.toString().substringBeforeLast('.')
                     val rel = try { root.relativize(f).toString() } catch (_: Exception) { f.toString() }
-                    val out = suggestOutput(name)
-                    list.add(TemplateItem(name, "freemarker", null, rel, out))
+                    val ft = defaultTypeFor(name)
+                    val out = suggestOutput(name, ft)
+                    list.add(TemplateItem(name, "freemarker", null, rel, out, ft))
                 }
         }
         return list
@@ -349,18 +459,26 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
     /**
      * 根据模板名称返回默认输出路径模式（支持占位符）。
      */
-    private fun suggestOutput(name: String): String {
+    private fun suggestOutput(name: String, fileType: String): String {
         return when (name) {
-            "entity" -> "\${baseDir}/src/main/java/\${packagePath}/entity/\${entityName}.java"
-            "mapper" -> "\${baseDir}/src/main/java/\${packagePath}/mapper/\${entityName}Mapper.java"
-            "mapperXml" -> "\${baseDir}/src/main/java/\${packagePath}/mapper/xml/\${entityName}Mapper.xml"
-            "service" -> "\${baseDir}/src/main/java/\${packagePath}/service/\${entityName}Service.java"
-            "serviceImpl" -> "\${baseDir}/src/main/java/\${packagePath}/service/impl/\${entityName}ServiceImpl.java"
-            "controller" -> "\${baseDir}/src/main/java/\${packagePath}/controller/\${entityName}Controller.java"
-            "dto" -> "\${baseDir}/src/main/java/\${packagePath}/dto/\${entityName}DTO.java"
-            "vo" -> "\${baseDir}/src/main/java/\${packagePath}/vo/\${entityName}VO.java"
-            else -> "\${baseDir}/src/main/java/\${packagePath}/\${entityName}.java"
+            "entity" -> "\${baseDir}/src/main/java/\${packagePath}/entity/"
+            "mapper" -> "\${baseDir}/src/main/java/\${packagePath}/mapper/"
+            "mapperXml" -> "\${baseDir}/src/main/java/\${packagePath}/mapper/xml/"
+            "service" -> "\${baseDir}/src/main/java/\${packagePath}/service/"
+            "serviceImpl" -> "\${baseDir}/src/main/java/\${packagePath}/service/impl/"
+            "controller" -> "\${baseDir}/src/main/java/\${packagePath}/controller/"
+            "dto" -> "\${baseDir}/src/main/java/\${packagePath}/dto/"
+            "vo" -> "\${baseDir}/src/main/java/\${packagePath}/vo/"
+            else -> "\${baseDir}/src/main/java/\${packagePath}/"
         }
+    }
+    private fun defaultTypeFor(name: String): String = if (name.equals("mapperXml", true)) "xml" else "java"
+    private fun extensionFor(fileType: String): String = when (fileType.lowercase()) {
+        "java" -> "java"
+        "xml" -> "xml"
+        "kotlin", "kt" -> "kt"
+        "groovy", "gvy" -> "groovy"
+        else -> fileType.lowercase()
     }
     private fun inferPackage(): String {
         val base = project.basePath ?: return ""
@@ -369,16 +487,46 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         return "com.example"
     }
     private fun refreshTemplateList() {
-        allTemplates = scanTemplates(templateRoot()).let { list ->
-            list.filterNot { it.name.equals("enum", true) }
+        allTemplates = scanTemplates(templateRoot()).filterNot { it.name.equals("enum", true) }
+        if (allTemplates.isEmpty()) {
+            val base = project.basePath
+            if (base != null) {
+                val tplRoot = Path.of(base).resolve("my-easy-code").resolve("templates")
+                val destGeneral = tplRoot.resolve("general")
+                val enumsDir = tplRoot.resolve("enums")
+                try { Files.createDirectories(destGeneral) } catch (_: Throwable) {}
+                try { Files.createDirectories(enumsDir) } catch (_: Throwable) {}
+                val names = builtInTemplateBaseNames()
+                names.forEach { n ->
+                    val inStream = javaClass.classLoader.getResourceAsStream("templates/$n.ftl")
+                    if (inStream != null) {
+                        val target = destGeneral.resolve("$n.ftl")
+                        try { Files.copy(inStream, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING) } catch (_: Throwable) {}
+                    }
+                }
+                run {
+                    val enumStream = javaClass.classLoader.getResourceAsStream("templates/enum.ftl")
+                    if (enumStream != null) {
+                        val target = enumsDir.resolve("enum.ftl")
+                        try { Files.copy(enumStream, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING) } catch (_: Throwable) {}
+                    }
+                }
+                allTemplates = scanTemplates(templateRoot()).filterNot { it.name.equals("enum", true) }
+            }
         }
         templatePanel.removeAll()
         templateCheckBoxes.clear()
         templateOutputFields.clear()
+        templateFileNameFields.clear()
+        templateExcludeFlags.clear()
         allTemplates.forEach { t ->
             val row = JPanel(java.awt.BorderLayout())
             val cb = JCheckBox(t.name, true)
             val pathField = TextFieldWithBrowseButton()
+            val fileNameField = JBTextField()
+            pathField.textField.columns = 30
+            pathField.preferredSize = java.awt.Dimension(JBUI.scale(380), JBUI.scale(28))
+            pathField.maximumSize = java.awt.Dimension(JBUI.scale(450), JBUI.scale(28))
             val settings = project.service<GeneratorSettings>()
             val st = settings.state
             val remembered = st.templateOutputs?.get(t.name)
@@ -403,12 +551,41 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
                 override fun removeUpdate(e: javax.swing.event.DocumentEvent?) { save() }
                 override fun changedUpdate(e: javax.swing.event.DocumentEvent?) { save() }
             })
+            val rememberedFile = st.templateFileNames?.get(t.name)
+            val ext = extensionFor(t.fileType)
+            val baseName = if (t.name.equals("mapperXml", true)) "mapper" else t.name
+            val defName = "\${entityName}" + baseName + "." + ext
+            fileNameField.text = (rememberedFile?.takeIf { it.isNotBlank() } ?: defName)
+            fileNameField.columns = 30
+            fileNameField.preferredSize = java.awt.Dimension(JBUI.scale(300), JBUI.scale(28))
+            fileNameField.maximumSize = java.awt.Dimension(Int.MAX_VALUE, JBUI.scale(28))
+            fileNameField.toolTipText = "设置生成文件名（不含目录）"
+            fileNameField.document.addDocumentListener(object : javax.swing.event.DocumentListener {
+                private fun save() {
+                    val m = st.templateFileNames ?: mutableMapOf()
+                    m[t.name] = fileNameField.text.trim()
+                    st.templateFileNames = m
+                }
+                override fun insertUpdate(e: javax.swing.event.DocumentEvent?) { save() }
+                override fun removeUpdate(e: javax.swing.event.DocumentEvent?) { save() }
+                override fun changedUpdate(e: javax.swing.event.DocumentEvent?) { save() }
+            })
             templateCheckBoxes.add(cb)
             templateOutputFields.add(pathField)
+            templateFileNameFields.add(fileNameField)
+            val excludeCb = JCheckBox("", false)
+            excludeCb.toolTipText = "勾选后该模板参与排除字段设置"
+            templateExcludeFlags.add(excludeCb)
+            cb.addActionListener { refreshTableTabs() }
+            excludeCb.addActionListener { refreshTableTabs() }
             row.add(cb, java.awt.BorderLayout.WEST)
             val center = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 8, 0))
             center.add(JLabel("保存路径"))
             center.add(pathField)
+            center.add(JLabel("文件名"))
+            center.add(fileNameField)
+            center.add(JLabel("排除字段"))
+            center.add(excludeCb)
             row.add(center, java.awt.BorderLayout.CENTER)
             templatePanel.add(row)
         }
@@ -424,8 +601,9 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         val baseDir = baseDirField.text.ifBlank { project.basePath ?: "" }
         allTemplates = scanTemplates(templateRoot())
         val selected = selectedTemplates()
-        val templates = if (selected.isNotEmpty()) selected else allTemplates
+        val templates = selected
         val pkgPath = pkg.replace('.', '/')
+        val settings = project.service<GeneratorSettings>()
         val sb = StringBuilder()
         templates.forEach { t ->
             var p = t.outputPath
@@ -433,8 +611,16 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
             p = p.replace("\${packagePath}", pkgPath)
             p = p.replace("\${packageName}", pkg)
             p = p.replace("\${entityName}", entityName)
-            p = p.replace("\${tableName}", first)
-            sb.append(p).append('\n')
+            p = p.replace("\${tableName}", baseName)
+            val rememberedFile = settings.state.templateFileNames?.get(t.name)
+            val ext = extensionFor(t.fileType)
+            val base = if (t.name.equals("mapperXml", true)) "mapper" else t.name
+            val defFile = entityName + base + "." + ext
+            val fileNameRaw = (rememberedFile ?: defFile)
+            val fileName = fileNameRaw.replace("\${entityName}", entityName).replace("\${tableName}", first)
+            val dirOnly = java.nio.file.Path.of(p).parent?.toString() ?: p
+            val finalPath = java.nio.file.Path.of(dirOnly).resolve(fileName).toString()
+            sb.append(finalPath).append('\n')
         }
         return sb.toString()
     }
@@ -446,6 +632,19 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         }
         return b.toString()
     }
+    private fun unifyExcludesAcrossTabs() {
+        val tables = selectedTableNames()
+        tables.forEach { table ->
+            val dtoSel = tableDtoExcludeMap.getOrPut(table) { mutableSetOf() }
+            val voSel = tableVoExcludeMap.getOrPut(table) { mutableSetOf() }
+            val bothSel = tableBothExcludeMap.getOrPut(table) { mutableSetOf() }
+            val union = mutableSetOf<String>()
+            union.addAll(dtoSel); union.addAll(voSel); union.addAll(bothSel)
+            dtoSel.clear(); dtoSel.addAll(union)
+            voSel.clear(); voSel.addAll(union)
+            bothSel.clear(); bothSel.addAll(union)
+        }
+    }
     fun selectedTableNames(): List<String> = tableCheckboxes.filter { it.isSelected }.map { it.text }
 
     private fun refreshTableTabs() {
@@ -453,54 +652,157 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         tableTabs.removeAll()
         val tablesExcludeTabs = javax.swing.JTabbedPane()
         val tablesEnumTabs = javax.swing.JTabbedPane()
+        val chosenTemplateNames = templateCheckBoxes.mapIndexedNotNull { idx, cb ->
+            if (cb.isSelected && idx < templateExcludeFlags.size && templateExcludeFlags[idx].isSelected && idx < allTemplates.size) allTemplates[idx].name else null
+        }
         tables.forEach { table ->
             val cols = fetchColumns(table)
-            val dtoPanel = JPanel(); dtoPanel.layout = BoxLayout(dtoPanel, BoxLayout.Y_AXIS)
-            val voPanel = JPanel(); voPanel.layout = BoxLayout(voPanel, BoxLayout.Y_AXIS)
             val dtoSel = tableDtoExcludeMap.getOrPut(table) { mutableSetOf() }
             val voSel = tableVoExcludeMap.getOrPut(table) { mutableSetOf() }
             val bothSel = tableBothExcludeMap.getOrPut(table) { mutableSetOf() }
-            val excludeContent: java.awt.Component = if (applyBothCb.isSelected) {
-                val bothPanel = JPanel(); bothPanel.layout = BoxLayout(bothPanel, BoxLayout.Y_AXIS)
-                cols.forEach { cName ->
-                    val bcb = JCheckBox(cName, bothSel.contains(cName))
-                    bcb.addActionListener {
-                        if (bcb.isSelected) {
-                            bothSel.add(cName); dtoSel.add(cName); voSel.add(cName)
-                        } else {
-                            bothSel.remove(cName); dtoSel.remove(cName); voSel.remove(cName)
+            val subTabs = javax.swing.JTabbedPane()
+            fun onToggle(tplName: String, col: String, selected: Boolean) {
+                if (applyBothCb.isSelected) {
+                    if (selected) {
+                        bothSel.add(col); dtoSel.add(col); voSel.add(col)
+                    } else {
+                        bothSel.remove(col); dtoSel.remove(col); voSel.remove(col)
+                    }
+                    val union = mutableSetOf<String>().apply {
+                        addAll(dtoSel); addAll(voSel); addAll(bothSel)
+                    }
+                    for (i in 0 until subTabs.tabCount) {
+                        val comp = subTabs.getComponentAt(i)
+                        val scroll = comp as? JScrollPane
+                        val panel = (scroll?.viewport?.view as? JPanel) ?: continue
+                        for (j in 0 until panel.componentCount) {
+                            val c0 = panel.getComponent(j)
+                            if (c0 is JCheckBox) {
+                                c0.isSelected = union.contains(c0.text)
+                            }
                         }
                     }
-                    bothPanel.add(bcb)
+                } else {
+                    when (tplName.lowercase()) {
+                        "dto" -> if (selected) dtoSel.add(col) else dtoSel.remove(col)
+                        "vo" -> if (selected) voSel.add(col) else voSel.remove(col)
+                        else -> if (selected) bothSel.add(col) else bothSel.remove(col)
+                    }
                 }
-                JScrollPane(bothPanel)
-            } else {
-                cols.forEach { cName ->
-                    val dcb = JCheckBox(cName, dtoSel.contains(cName))
-                    val vcb = JCheckBox(cName, voSel.contains(cName))
-                    dcb.addActionListener { if (dcb.isSelected) dtoSel.add(cName) else dtoSel.remove(cName) }
-                    vcb.addActionListener { if (vcb.isSelected) voSel.add(cName) else voSel.remove(cName) }
-                    dtoPanel.add(dcb)
-                    voPanel.add(vcb)
-                }
-                val subTabs = javax.swing.JTabbedPane()
-                subTabs.addTab("DTO", JScrollPane(dtoPanel))
-                subTabs.addTab("VO", JScrollPane(voPanel))
-                subTabs
             }
-            tablesExcludeTabs.addTab(table, excludeContent)
+            chosenTemplateNames.forEach { name ->
+                val panel = JPanel(); panel.layout = BoxLayout(panel, BoxLayout.Y_AXIS)
+                cols.forEach { c ->
+                    val initSelected = when (name.lowercase()) {
+                        "dto" -> dtoSel.contains(c)
+                        "vo" -> voSel.contains(c)
+                        else -> bothSel.contains(c)
+                    }
+                    val cb = JCheckBox(c, initSelected)
+                    cb.addActionListener { onToggle(name, c, cb.isSelected) }
+                    panel.add(cb)
+                }
+                run {
+                    val sp = JScrollPane(panel)
+                    sp.horizontalScrollBarPolicy = javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
+                    subTabs.addTab(name, sp)
+                }
+            }
+            run {
+                val lockIdx = intArrayOf(0)
+                subTabs.addChangeListener {
+                    if (applyBothCb.isSelected) {
+                        subTabs.selectedIndex = lockIdx[0]
+                    } else {
+                        lockIdx[0] = subTabs.selectedIndex
+                    }
+                }
+            }
+            tablesExcludeTabs.addTab(table, subTabs)
             val enumPanel = JPanel(); enumPanel.layout = BoxLayout(enumPanel, BoxLayout.Y_AXIS)
             val enumSel = tableEnumFieldsMap.getOrPut(table) { mutableSetOf() }
+            val enumTpls = tableEnumTplMap.getOrPut(table) { mutableMapOf() }
+            val enumOutDirs = tableEnumOutDirMap.getOrPut(table) { mutableMapOf() }
+            val opts = listEnumTemplates()
+            val settingsState = project.service<GeneratorSettings>().state
+            val pkg = packageNameField.text.ifBlank { inferPackage() }
+            val baseDir = baseDirField.text.ifBlank { project.basePath ?: "" }
+            val pkgPath = pkg.replace('.', '/')
+            val defaultEnumDir = java.nio.file.Path.of(baseDir).resolve("src/main/java").resolve(pkgPath).resolve("enums").toString()
             cols.forEach { cName ->
+                val row = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 8, 0))
                 val ecb = JCheckBox(cName, enumSel.contains(cName))
-                ecb.addActionListener { if (ecb.isSelected) enumSel.add(cName) else enumSel.remove(cName) }
-                enumPanel.add(ecb)
+                val combo = javax.swing.JComboBox(opts.toTypedArray())
+                combo.toolTipText = "选择枚举模板"
+                val lbl = JLabel("选择枚举模板")
+                val remember = enumTpls[cName] ?: settingsState.enumTemplateName
+                if (!remember.isNullOrBlank()) combo.selectedItem = remember
+                combo.isVisible = ecb.isSelected
+                lbl.isVisible = ecb.isSelected
+                val dirLbl = JLabel("保存路径")
+                val dirField = com.intellij.openapi.ui.TextFieldWithBrowseButton()
+                dirField.text = enumOutDirs[cName] ?: defaultEnumDir
+                dirField.textField.columns = 30
+                dirField.preferredSize = java.awt.Dimension(JBUI.scale(380), JBUI.scale(28))
+                dirField.maximumSize = java.awt.Dimension(JBUI.scale(450), JBUI.scale(28))
+                dirField.addBrowseFolderListener(
+                    "选择保存目录",
+                    null,
+                    project,
+                    com.intellij.openapi.fileChooser.FileChooserDescriptorFactory.createSingleFolderDescriptor()
+                )
+                dirField.isVisible = ecb.isSelected
+                dirLbl.isVisible = ecb.isSelected
+                ecb.addActionListener {
+                    if (ecb.isSelected) enumSel.add(cName) else enumSel.remove(cName)
+                    combo.isVisible = ecb.isSelected
+                    lbl.isVisible = ecb.isSelected
+                    dirField.isVisible = ecb.isSelected
+                    dirLbl.isVisible = ecb.isSelected
+                }
+                combo.addActionListener {
+                    val sel = combo.selectedItem?.toString()
+                    if (!sel.isNullOrBlank()) enumTpls[cName] = sel
+                }
+                dirField.textField.document.addDocumentListener(object : javax.swing.event.DocumentListener {
+                    private fun save() {
+                        enumOutDirs[cName] = dirField.text.trim()
+                    }
+                    override fun insertUpdate(e: javax.swing.event.DocumentEvent?) { save() }
+                    override fun removeUpdate(e: javax.swing.event.DocumentEvent?) { save() }
+                    override fun changedUpdate(e: javax.swing.event.DocumentEvent?) { save() }
+                })
+                row.add(ecb)
+                row.add(lbl)
+                row.add(combo)
+                row.add(dirLbl)
+                row.add(dirField)
+                enumPanel.add(row)
             }
-            tablesEnumTabs.addTab(table, JScrollPane(enumPanel))
+            run {
+                val sp = JScrollPane(enumPanel)
+                sp.horizontalScrollBarPolicy = javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
+                tablesEnumTabs.addTab(table, sp)
+            }
         }
         tableTabs.addTab("排除字段", tablesExcludeTabs)
         tableTabs.addTab("枚举字段", tablesEnumTabs)
         tableTabs.revalidate(); tableTabs.repaint()
+    }
+    private fun listEnumTemplates(): List<String> {
+        val base = project.basePath ?: return listOf("内置")
+        val dir = Path.of(base).resolve("my-easy-code").resolve("templates").resolve("enums")
+        if (!Files.exists(dir)) return listOf("内置")
+        return try {
+            Files.list(dir).use { s ->
+                s.filter { Files.isRegularFile(it) && it.fileName.toString().lowercase().endsWith(".ftl") }
+                    .map { it.fileName.toString() }
+                    .toList()
+                    .ifEmpty { listOf("内置") }
+            }
+        } catch (_: Throwable) {
+            listOf("内置")
+        }
     }
 
     private fun fetchAllTables(): List<String> {
@@ -511,6 +813,7 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         }
         return list.toList().sorted()
     }
+    
 
     
 
@@ -522,7 +825,7 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         templateCheckBoxes.forEachIndexed { i, cb ->
             if (cb.isSelected && i < allTemplates.size && i < templateOutputFields.size) {
                 val base = allTemplates[i]
-                list.add(TemplateItem(base.name, base.engine, base.content, base.file, base.outputPath))
+                list.add(TemplateItem(base.name, base.engine, base.content, base.file, base.outputPath, base.fileType))
             }
         }
         return list

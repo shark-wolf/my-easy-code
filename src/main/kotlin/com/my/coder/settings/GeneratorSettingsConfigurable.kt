@@ -42,6 +42,7 @@ class GeneratorSettingsConfigurable : Configurable {
     private val schemeNameField = JBTextField()
     private val tmplNameField = JBTextField()
     private val tmplEngineField = JBTextField("freemarker")
+    private val tmplFileTypeField = JBTextField("java")
     private val tmplFileField = TextFieldWithBrowseButton()
     private val tmplOutputField = JBTextField()
     private val tmplContentField = JBTextField()
@@ -87,22 +88,7 @@ class GeneratorSettingsConfigurable : Configurable {
         p.add(setActiveBtn)
         p.add(JLabel("Templates in Selected Scheme"))
         p.add(templateList)
-        p.add(JLabel("Template Name"))
-        p.add(tmplNameField)
-        p.add(JLabel("Engine"))
-        p.add(tmplEngineField)
-        p.add(JLabel("Template File"))
-        p.add(tmplFileField)
-        p.add(JLabel("Output Path"))
-        p.add(tmplOutputField)
-        p.add(JLabel("Inline Content (optional)"))
-        p.add(tmplContentField)
-        p.add(addTemplateBtn)
-        p.add(removeTemplateBtn)
-        p.add(importSamplesBtn)
-        p.add(JLabel("Import Directory"))
-        p.add(importDirField)
-        p.add(importFromDirBtn)
+        // template adding UI removed
 
         addSchemeBtn.addActionListener {
             val name = schemeNameField.text.trim()
@@ -123,104 +109,10 @@ class GeneratorSettingsConfigurable : Configurable {
         setActiveBtn.addActionListener {
             // no-op in UI, applied in apply()
         }
-        addTemplateBtn.addActionListener {
-            val name = tmplNameField.text.trim()
-            val engine = tmplEngineField.text.trim()
-            val file = tmplFileField.text.trim()
-            val out = tmplOutputField.text.trim()
-            val content = tmplContentField.text
-            if (name.isNotEmpty() && out.isNotEmpty()) {
-                val schemeIdx = schemeList.selectedIndex
-                if (schemeIdx >= 0) {
-                    val schemeName = schemeListModel.get(schemeIdx)
-                    val list = schemeTemplates.getOrPut(schemeName) { mutableListOf() }
-                    val item = TemplateItem(name, engine.ifBlank { "freemarker" }, content.ifBlank { null }, file.ifBlank { null }, out)
-                    list.add(item)
-                    templateListModel.addElement(renderTemplateItem(item))
-                }
-            }
-        }
-        removeTemplateBtn.addActionListener {
-            val idx = templateList.selectedIndex
-            if (idx >= 0) {
-                val schemeIdx = schemeList.selectedIndex
-                if (schemeIdx >= 0) {
-                    val schemeName = schemeListModel.get(schemeIdx)
-                    val list = schemeTemplates[schemeName]
-                    if (list != null && idx < list.size) list.removeAt(idx)
-                }
-                templateListModel.remove(idx)
-            }
-        }
-        importSamplesBtn.addActionListener {
-            val schemeIdx = schemeList.selectedIndex
-            if (schemeIdx >= 0) {
-                val schemeName = schemeListModel.get(schemeIdx)
-                val list = schemeTemplates.getOrPut(schemeName) { mutableListOf() }
-                val samples = listOf(
-                    TemplateItem("entity", "freemarker", null, "templates/entity.ftl", "${'$'}{baseDir}/src/main/java/${'$'}{packagePath}/entity/${'$'}{entityName}.java"),
-                    TemplateItem("mapper", "freemarker", null, "templates/mapper.ftl", "${'$'}{baseDir}/src/main/java/${'$'}{packagePath}/mapper/${'$'}{entityName}Mapper.java"),
-                    TemplateItem("mapperXml", "freemarker", null, "templates/mapperXml.ftl", "${'$'}{baseDir}/src/main/java/${'$'}{packagePath}/mapper/xml/${'$'}{entityName}Mapper.xml"),
-                    TemplateItem("service", "freemarker", null, "templates/service.ftl", "${'$'}{baseDir}/src/main/java/${'$'}{packagePath}/service/${'$'}{entityName}Service.java"),
-                    TemplateItem("serviceImpl", "freemarker", null, "templates/serviceImpl.ftl", "${'$'}{baseDir}/src/main/java/${'$'}{packagePath}/service/impl/${'$'}{entityName}ServiceImpl.java"),
-                    TemplateItem("controller", "freemarker", null, "templates/controller.ftl", "${'$'}{baseDir}/src/main/java/${'$'}{packagePath}/controller/${'$'}{entityName}Controller.java"),
-                    TemplateItem("dto", "freemarker", null, "templates/dto.ftl", "${'$'}{baseDir}/src/main/java/${'$'}{packagePath}/dto/${'$'}{entityName}DTO.java"),
-                    TemplateItem("vo", "freemarker", null, "templates/vo.ftl", "${'$'}{baseDir}/src/main/java/${'$'}{packagePath}/vo/${'$'}{entityName}VO.java")
-                )
-                samples.forEach { list.add(it); templateListModel.addElement(renderTemplateItem(it)) }
-                val rootText = templateRootField.text.trim()
-                val root = if (rootText.isBlank()) {
-                    val descriptor = FileChooserDescriptorFactory.createSingleFolderDescriptor()
-                    val vf = FileChooser.chooseFile(descriptor, null, null)
-                    if (vf == null) return@addActionListener
-                    templateRootField.text = vf.path
-                    Paths.get(vf.path)
-                } else Paths.get(rootText)
-                ApplicationManager.getApplication().runWriteAction {
-                    val dir = root.resolve("templates")
-                    Files.createDirectories(dir)
-                    fun copy(name: String) {
-                        val inStream = javaClass.classLoader.getResourceAsStream("templates/$name.ftl") ?: return
-                        val target = dir.resolve("$name.ftl")
-                        Files.copy(inStream, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
-                    }
-                    copy("entity"); copy("mapper"); copy("mapperXml"); copy("service"); copy("serviceImpl"); copy("controller"); copy("dto"); copy("vo")
-                }
-            }
-        }
-        importFromDirBtn.addActionListener {
-            val schemeIdx = schemeList.selectedIndex
-            if (schemeIdx < 0) {
-                Messages.showInfoMessage("请先选择一个模板方案", "Import Templates")
-                return@addActionListener
-            }
-            val schemeName = schemeListModel.get(schemeIdx)
-            val list = schemeTemplates.getOrPut(schemeName) { mutableListOf() }
-            val dirText = importDirField.text.trim()
-            if (dirText.isEmpty()) {
-                Messages.showInfoMessage("请选择需要导入的目录", "Import Templates")
-                return@addActionListener
-            }
-            val root = Paths.get(dirText)
-            if (!Files.exists(root) || !Files.isDirectory(root)) {
-                Messages.showErrorDialog("目录不存在或不可用: $dirText", "Import Templates")
-                return@addActionListener
-            }
-            if (templateRootField.text.isBlank()) {
-                templateRootField.text = dirText
-            }
-            Files.walk(root).use { stream ->
-                stream.filter { Files.isRegularFile(it) && it.fileName.toString().lowercase().endsWith(".ftl") }
-                    .forEach { f ->
-                        val rel = try { root.relativize(f).toString() } catch (e: Exception) { f.toString() }
-                        val name = guessName(f.fileName.toString())
-                        val out = suggestOutput(name)
-                        val item = TemplateItem(name, "freemarker", null, rel, out)
-                        list.add(item)
-                        templateListModel.addElement(renderTemplateItem(item))
-                    }
-            }
-        }
+        // addTemplate disabled
+        // removeTemplate disabled
+        // importSamples disabled
+        // importFromDir disabled
         schemeList.addListSelectionListener(ListSelectionListener {
             val idx = schemeList.selectedIndex
             templateListModel.clear()
@@ -319,6 +211,7 @@ class GeneratorSettingsConfigurable : Configurable {
         append(it.name).append(" | ").append(it.engine)
         append(" | file=").append(it.file ?: "inline")
         append(" | out=").append(it.outputPath)
+        append(" | type=").append(it.fileType)
     }
 
     private fun guessName(fileName: String): String {
@@ -338,18 +231,30 @@ class GeneratorSettingsConfigurable : Configurable {
         }
     }
 
-    private fun suggestOutput(name: String): String {
+    private fun suggestOutput(name: String, fileType: String): String {
         return when (name) {
-            "entity" -> "${'$'}{baseDir}/src/main/java/${'$'}{packagePath}/entity/${'$'}{entityName}.java"
-            "mapper" -> "${'$'}{baseDir}/src/main/java/${'$'}{packagePath}/mapper/${'$'}{entityName}Mapper.java"
-            "mapperXml" -> "${'$'}{baseDir}/src/main/java/${'$'}{packagePath}/mapper/xml/${'$'}{entityName}Mapper.xml"
-            "service" -> "${'$'}{baseDir}/src/main/java/${'$'}{packagePath}/service/${'$'}{entityName}Service.java"
-            "serviceImpl" -> "${'$'}{baseDir}/src/main/java/${'$'}{packagePath}/service/impl/${'$'}{entityName}ServiceImpl.java"
-            "controller" -> "${'$'}{baseDir}/src/main/java/${'$'}{packagePath}/controller/${'$'}{entityName}Controller.java"
-            "dto" -> "${'$'}{baseDir}/src/main/java/${'$'}{packagePath}/dto/${'$'}{entityName}DTO.java"
-            "vo" -> "${'$'}{baseDir}/src/main/java/${'$'}{packagePath}/vo/${'$'}{entityName}VO.java"
-            else -> "${'$'}{baseDir}/src/main/java/${'$'}{packagePath}/${'$'}{entityName}.java"
+            "entity" -> "${'$'}{baseDir}/src/main/java/${'$'}{packagePath}/entity/"
+            "mapper" -> "${'$'}{baseDir}/src/main/java/${'$'}{packagePath}/mapper/"
+            "mapperXml" -> "${'$'}{baseDir}/src/main/java/${'$'}{packagePath}/mapper/xml/"
+            "service" -> "${'$'}{baseDir}/src/main/java/${'$'}{packagePath}/service/"
+            "serviceImpl" -> "${'$'}{baseDir}/src/main/java/${'$'}{packagePath}/service/impl/"
+            "controller" -> "${'$'}{baseDir}/src/main/java/${'$'}{packagePath}/controller/"
+            "dto" -> "${'$'}{baseDir}/src/main/java/${'$'}{packagePath}/dto/"
+            "vo" -> "${'$'}{baseDir}/src/main/java/${'$'}{packagePath}/vo/"
+            else -> "${'$'}{baseDir}/src/main/java/${'$'}{packagePath}/"
         }
+    }
+    private fun defaultTypeFor(name: String): String = if (name.equals("mapperXml", true)) "xml" else "java"
+    private fun extensionFor(fileType: String): String = when (fileType.lowercase()) {
+        "java" -> "java"
+        "xml" -> "xml"
+        "kotlin", "kt" -> "kt"
+        "groovy", "gvy" -> "groovy"
+        else -> fileType.lowercase()
+    }
+    private fun ensureExtension(path: String, fileType: String): String {
+        val fn = java.nio.file.Path.of(path).fileName.toString()
+        return if (fn.contains('.')) path else path + "." + extensionFor(fileType)
     }
 
     override fun disposeUIResources() {

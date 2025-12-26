@@ -25,7 +25,13 @@ data class GeneratorConfig(
     val applyMapperMapping: Boolean = true,
     val stripTablePrefix: String? = null,
     val tableEnumFields: Map<String, List<String>>? = null,
-    val templateDirOverrides: Map<String, String>? = null
+    val templateDirOverrides: Map<String, String>? = null,
+    val templateFileNameOverrides: Map<String, String>? = null,
+    val templateExcludeTemplates: List<String>? = null
+    ,
+    val enumTemplateName: String? = null,
+    val tableEnumTemplateOverrides: Map<String, Map<String, String>>? = null,
+    val tableEnumOutputDirOverrides: Map<String, Map<String, String>>? = null
 )
 
 /**
@@ -46,7 +52,8 @@ data class TemplateItem(
     val engine: String,
     val content: String?,
     val file: String?,
-    val outputPath: String
+    val outputPath: String,
+    val fileType: String = "java"
 )
 
 /**

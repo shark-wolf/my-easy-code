@@ -27,6 +27,8 @@ class GeneratorSettings : PersistentStateComponent<GeneratorSettings.State> {
         var excludeApplyBoth: Boolean = false
         var stripTablePrefix: String? = null
         var templateOutputs: MutableMap<String, String>? = mutableMapOf()
+        var templateFileNames: MutableMap<String, String>? = mutableMapOf()
+        var enumTemplateName: String? = null
     }
 
     class TemplateScheme {

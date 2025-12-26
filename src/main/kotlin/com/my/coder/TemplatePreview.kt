@@ -28,8 +28,8 @@ object TemplatePreview {
         val defOut = suggestOutput(name)
         val table = resolveTable(project) ?: sampleTable()
         val defPath = expand(defOut, baseDir, pkg, table)
-        val defDir = Path.of(defPath).parent
-        val defFile = Path.of(defPath).fileName.toString()
+        val defDir = Path.of(defPath)
+        val defFile0 = "file"
         val overrideRaw = st.templateOutputs?.get(name)
         val finalDir = if (!overrideRaw.isNullOrBlank()) {
             val p = expand(overrideRaw!!, baseDir, pkg, table)
@@ -38,6 +38,20 @@ object TemplatePreview {
             if (last.contains('.')) ov.parent ?: ov else ov
         } else defDir
         val filePackage = packageFromDir(finalDir, baseDir, pkg)
+        val nameOverride = st.templateFileNames?.get(name)
+        fun defaultFileNameFor(tmplName: String, entity: String): String {
+            val ext = if (tmplName.equals("mapperXml", true)) "xml" else "java"
+            val base = if (tmplName.equals("mapperXml", true)) "mapper" else tmplName
+            return entity + base + "." + ext
+        }
+        fun expandPattern(name: String, entity: String, tableName: String): String {
+            var s = name
+            s = s.replace("\${entityName}", entity)
+            s = s.replace("\${tableName}", tableName)
+            return s
+        }
+        val chosenRaw = if (!nameOverride.isNullOrBlank()) nameOverride!! else defaultFileNameFor(name, table.entityName)
+        val defFile = expandPattern(chosenRaw, table.entityName, table.name)
         val fm = Configuration(Version("2.3.31"))
         fm.defaultEncoding = "UTF-8"
         val tplText = VfsUtil.loadText(file)
@@ -59,6 +73,7 @@ object TemplatePreview {
             "filePackage" to filePackage,
             "table" to table,
             "entityName" to table.entityName,
+            "stripPrefix" to (st.stripTablePrefix ?: ""),
             "author" to (st.author ?: System.getProperty("user.name")),
             "date" to java.time.LocalDate.now().toString(),
             "exclude" to emptyList<String>(),
@@ -98,15 +113,15 @@ object TemplatePreview {
     }
     private fun suggestOutput(name: String): String {
         return when (name) {
-            "entity" -> "\${baseDir}/src/main/java/\${packagePath}/entity/\${entityName}.java"
-            "mapper" -> "\${baseDir}/src/main/java/\${packagePath}/mapper/\${entityName}Mapper.java"
-            "mapperXml" -> "\${baseDir}/src/main/java/\${packagePath}/mapper/xml/\${entityName}Mapper.xml"
-            "service" -> "\${baseDir}/src/main/java/\${packagePath}/service/\${entityName}Service.java"
-            "serviceImpl" -> "\${baseDir}/src/main/java/\${packagePath}/service/impl/\${entityName}ServiceImpl.java"
-            "controller" -> "\${baseDir}/src/main/java/\${packagePath}/controller/\${entityName}Controller.java"
-            "dto" -> "\${baseDir}/src/main/java/\${packagePath}/dto/\${entityName}DTO.java"
-            "vo" -> "\${baseDir}/src/main/java/\${packagePath}/vo/\${entityName}VO.java"
-            else -> "\${baseDir}/src/main/java/\${packagePath}/\${entityName}.java"
+            "entity" -> "\${baseDir}/src/main/java/\${packagePath}/entity/"
+            "mapper" -> "\${baseDir}/src/main/java/\${packagePath}/mapper/"
+            "mapperXml" -> "\${baseDir}/src/main/java/\${packagePath}/mapper/xml/"
+            "service" -> "\${baseDir}/src/main/java/\${packagePath}/service/"
+            "serviceImpl" -> "\${baseDir}/src/main/java/\${packagePath}/service/impl/"
+            "controller" -> "\${baseDir}/src/main/java/\${packagePath}/controller/"
+            "dto" -> "\${baseDir}/src/main/java/\${packagePath}/dto/"
+            "vo" -> "\${baseDir}/src/main/java/\${packagePath}/vo/"
+            else -> "\${baseDir}/src/main/java/\${packagePath}/"
         }
     }
     private fun expand(pattern: String, baseDir: String, packageName: String, t: TableMeta): String {
