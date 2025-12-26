@@ -37,7 +37,7 @@
 
 ## 构建与安装
 - 构建：`./gradlew.bat build -x test`
-- 打包：`buildPlugin` 产出 `build/distributions/*.zip`
+- 打包：`./gradlew.bat buildPlugin`  产出 `build/distributions/*.zip`
 - 安装：主 IDEA `Settings -> Plugins -> Install Plugin from Disk...`
 
 ## 许可
