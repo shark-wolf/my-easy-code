@@ -11,10 +11,10 @@ public interface ${entityName}Service {
 <#assign pkType = c.javaType>
 </#if>
 </#list>
-    ${entityName}VO getById(${pkType} id);
+    
     List<${entityName}VO> list();
-    ${packageName}.common.page.PageVO<${entityName}VO> page(${packageName}.common.page.PageDTO dto);
-    ${entityName}VO add(${entityName}DTO dto);
-    ${entityName}VO update(${entityName}DTO dto);
-    void delete(${pkType} id);
+    Boolean add(${entityName}DTO dto);
+    Boolean update(${entityName}DTO dto);
+    ${entityName}VO getById(${pkType} id);
+    Boolean delete(${pkType} id);
 }

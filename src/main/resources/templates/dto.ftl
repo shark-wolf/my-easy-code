@@ -1,8 +1,6 @@
 package ${filePackage};
 <#if useLombok>
 import lombok.Data;
-import lombok.NoArgsConstructor;
-import lombok.AllArgsConstructor;
 </#if>
 <#if dtoImports?? && (dtoImports?size > 0)>
 <#list dtoImports as im>
@@ -16,8 +14,6 @@ import javax.validation.constraints.Size;
 </#if>
 <#if useLombok>
 @Data
-@NoArgsConstructor
-@AllArgsConstructor
 </#if>
 public class ${entityName}DTO {
 <#list table.columns as c>

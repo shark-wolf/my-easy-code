@@ -2,8 +2,6 @@ package ${filePackage};
 <#if useLombok>
 import lombok.Data;
 import lombok.Builder;
-import lombok.NoArgsConstructor;
-import lombok.AllArgsConstructor;
 </#if>
 <#if entityImports?? && (entityImports?size > 0)>
 <#list entityImports as im>
@@ -17,8 +15,6 @@ import ${im};
 <#if useLombok>
 @Data
 @Builder
-@NoArgsConstructor
-@AllArgsConstructor
 </#if>
 public class ${entityName} {
 <#list table.columns as c>

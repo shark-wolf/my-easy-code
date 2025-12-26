@@ -32,7 +32,7 @@ public class ${entityName}Controller {
     public ${entityName}VO add(@RequestBody ${entityName}DTO body) { return service.add(body); }
 
     @PostMapping("/page")
-    public ${packageName}.common.page.PageVO<${entityName}VO> page(@RequestBody ${packageName}.common.page.PageDTO dto) { return service.page(dto); }
+    public IPage<${entityName}VO> page(@RequestBody PageDTO dto) { return service.page(dto); }
 
     @PutMapping
     public ${entityName}VO update(@RequestBody ${entityName}DTO body) { return service.update(body); }
