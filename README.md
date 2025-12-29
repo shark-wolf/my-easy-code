@@ -70,6 +70,22 @@
   - ${tableName}：原始表名
   - 以上占位符在模板项的 outputPath 与文件名覆盖中均可使用
 
+## 序列化支持
+- serialVersionUID：提供给模板的长整型变量，用于实现可控序列化版本号
+  - 生成规则：对字符串 "${packageName}.${entityName}.${templateName}" 进行 SHA-1，取前 8 字节为正数 long
+  - 在预览与实际生成时一致，保证稳定
+- 内置模板已默认支持
+  - entity、dto、vo 模板已添加 implements java.io.Serializable，并声明字段
+  - private static final long serialVersionUID = ${serialVersionUID}L;
+- 自定义模板使用示例
+
+```java
+public class ${entityName} implements java.io.Serializable {
+    private static final long serialVersionUID = ${serialVersionUID}L;
+    // ...
+}
+```
+
 ## 常见问题
 - 预览未出现按钮：确保文件位于 `my-easy-code/templates` 下且扩展名为 `.ftl`
 - 包名不正确：检查保存路径指向 `src/main/java` 下的合规包路径

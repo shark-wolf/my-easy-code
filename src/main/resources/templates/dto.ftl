@@ -15,7 +15,8 @@ import javax.validation.constraints.Size;
 <#if useLombok>
 @Data
 </#if>
-public class ${entityName}DTO {
+public class ${entityName}DTO implements java.io.Serializable {
+    private static final long serialVersionUID = ${serialVersionUID}L;
 <#list table.columns as c>
 <#if !(exclude?seq_contains(c.name))>
     <#if c.comment?? && c.comment?length gt 0>

@@ -86,6 +86,14 @@ object TemplatePreview {
             val mapperPkg = filePackage
             val controllerPkg = filePackage
             val convertPkg = "$pkg.convert"
+            val serialUid = run {
+                val md = java.security.MessageDigest.getInstance("SHA-1")
+                md.update((pkg + "." + table.entityName + "." + name).toByteArray(java.nio.charset.StandardCharsets.UTF_8))
+                val b = md.digest()
+                val bb = java.nio.ByteBuffer.wrap(java.util.Arrays.copyOfRange(b, 0, 8))
+                val v = bb.long
+                if (v < 0) -v else v
+            }
             val data = mapOf(
                 "packageName" to pkg,
                 "filePackage" to filePackage,
@@ -107,7 +115,8 @@ object TemplatePreview {
                 "servicePackage" to servicePkg,
                 "mapperPackage" to mapperPkg,
                 "controllerPackage" to controllerPkg,
-                "convertPackage" to convertPkg
+                "convertPackage" to convertPkg,
+                "serialVersionUID" to serialUid
             )
             template.process(data, out)
             val dlg = com.my.coder.ui.TemplatePreviewDialog(project, defFile, out.toString())

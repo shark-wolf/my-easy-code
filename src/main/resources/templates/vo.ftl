@@ -18,7 +18,8 @@ import ${im};
 @NoArgsConstructor
 @AllArgsConstructor
 </#if>
-public class ${entityName}VO {
+public class ${entityName}VO implements java.io.Serializable {
+    private static final long serialVersionUID = ${serialVersionUID}L;
 <#list table.columns as c>
 <#if !(exclude?seq_contains(c.name))>
     <#if c.comment?? && c.comment?length gt 0>

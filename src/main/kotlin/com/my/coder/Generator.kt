@@ -766,6 +766,14 @@ object Generator {
                 val mapperPackage = effectivePackageFor("mapper")
                 val controllerPackage = effectivePackageFor("controller")
                 val convertPackage = cfgEff.packageName + ".convert"
+                val serialUid = run {
+                    val md = java.security.MessageDigest.getInstance("SHA-1")
+                    md.update((cfgEff.packageName + "." + t.entityName + "." + tmpl.name).toByteArray(StandardCharsets.UTF_8))
+                    val b = md.digest()
+                    val bb = java.nio.ByteBuffer.wrap(java.util.Arrays.copyOfRange(b, 0, 8))
+                    val v = bb.long
+                    if (v < 0) -v else v
+                }
                 val data = mapOf(
                     "packageName" to cfgEff.packageName,
                     "filePackage" to filePackage,
@@ -787,7 +795,8 @@ object Generator {
                     "servicePackage" to servicePackage,
                     "mapperPackage" to mapperPackage,
                     "controllerPackage" to controllerPackage,
-                    "convertPackage" to convertPackage
+                    "convertPackage" to convertPackage,
+                    "serialVersionUID" to serialUid
                 )
                 // 写文件 + 刷新 VFS + PSI 格式化
                 ApplicationManager.getApplication().runWriteAction {
