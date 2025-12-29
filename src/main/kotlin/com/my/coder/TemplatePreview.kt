@@ -25,6 +25,10 @@ object TemplatePreview {
         val pkg = st.packageName ?: "com.example"
         val baseDir = st.baseDir ?: project.basePath ?: ""
         val name = guessName(file.name)
+        val isEnumTmpl = try {
+            val p = file.path.replace('\\','/').lowercase()
+            p.contains("/my-easy-code/templates/enums/") || name.lowercase() == "enum" || file.name.lowercase().contains("enum")
+        } catch (_: Throwable) { false }
         val defOut = suggestOutput(name)
         val table = resolveTable(project) ?: sampleTable()
         val defPath = expand(defOut, baseDir, pkg, table)
@@ -56,45 +60,59 @@ object TemplatePreview {
         fm.defaultEncoding = "UTF-8"
         val tplText = VfsUtil.loadText(file)
         val template = Template(name, StringReader(tplText), fm)
-        val imps = table.columns.mapNotNull {
-            val jt = it.javaType
-            val hasDot = jt.contains('.')
-            if (hasDot && !jt.startsWith("java.lang") && !jt.startsWith("kotlin.")) jt else null
-        }.distinct()
-        val dtoPkg = filePackage
-        val voPkg = filePackage
-        val entityPkg = filePackage
-        val servicePkg = filePackage
-        val mapperPkg = filePackage
-        val controllerPkg = filePackage
-        val convertPkg = "$pkg.convert"
-        val data = mapOf(
-            "packageName" to pkg,
-            "filePackage" to filePackage,
-            "table" to table,
-            "entityName" to table.entityName,
-            "stripPrefix" to (st.stripTablePrefix ?: ""),
-            "author" to (st.author ?: System.getProperty("user.name")),
-            "date" to java.time.LocalDate.now().toString(),
-            "exclude" to emptyList<String>(),
-            "dtoExclude" to (st.dtoExclude ?: emptyList()),
-            "voExclude" to (st.voExclude ?: emptyList()),
-            "useLombok" to (st.useLombok),
-            "dtoImports" to imps,
-            "entityImports" to imps,
-            "voImports" to imps,
-            "dtoPackage" to dtoPkg,
-            "voPackage" to voPkg,
-            "entityPackage" to entityPkg,
-            "servicePackage" to servicePkg,
-            "mapperPackage" to mapperPkg,
-            "controllerPackage" to controllerPkg,
-            "convertPackage" to convertPkg
-        )
         val out = java.io.StringWriter()
-        template.process(data, out)
-        val dlg = com.my.coder.ui.TemplatePreviewDialog(project, defFile, out.toString())
-        dlg.show()
+        if (isEnumTmpl) {
+            val col = table.columns.firstOrNull()?.name ?: "status"
+            val enumName = "${table.entityName}${toCamelUpper(col)}Enum"
+            val data = mapOf(
+                "enumPackage" to (pkg + ".enums"),
+                "enumName" to enumName,
+                "tableName" to table.name,
+                "columnName" to col
+            )
+            template.process(data, out)
+            val dlg = com.my.coder.ui.TemplatePreviewDialog(project, enumName + ".java", out.toString())
+            dlg.show()
+        } else {
+            val imps = table.columns.mapNotNull {
+                val jt = it.javaType
+                val hasDot = jt.contains('.')
+                if (hasDot && !jt.startsWith("java.lang") && !jt.startsWith("kotlin.")) jt else null
+            }.distinct()
+            val dtoPkg = filePackage
+            val voPkg = filePackage
+            val entityPkg = filePackage
+            val servicePkg = filePackage
+            val mapperPkg = filePackage
+            val controllerPkg = filePackage
+            val convertPkg = "$pkg.convert"
+            val data = mapOf(
+                "packageName" to pkg,
+                "filePackage" to filePackage,
+                "table" to table,
+                "entityName" to table.entityName,
+                "stripPrefix" to (st.stripTablePrefix ?: ""),
+                "author" to (st.author ?: System.getProperty("user.name")),
+                "date" to java.time.LocalDate.now().toString(),
+                "exclude" to emptyList<String>(),
+                "dtoExclude" to (st.dtoExclude ?: emptyList()),
+                "voExclude" to (st.voExclude ?: emptyList()),
+                "useLombok" to (st.useLombok),
+                "dtoImports" to imps,
+                "entityImports" to imps,
+                "voImports" to imps,
+                "dtoPackage" to dtoPkg,
+                "voPackage" to voPkg,
+                "entityPackage" to entityPkg,
+                "servicePackage" to servicePkg,
+                "mapperPackage" to mapperPkg,
+                "controllerPackage" to controllerPkg,
+                "convertPackage" to convertPkg
+            )
+            template.process(data, out)
+            val dlg = com.my.coder.ui.TemplatePreviewDialog(project, defFile, out.toString())
+            dlg.show()
+        }
     }
     private fun guessName(fileName: String): String {
         val n = fileName.substringBeforeLast('.')
