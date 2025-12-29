@@ -14,6 +14,12 @@ import com.intellij.database.psi.DbPsiFacade
 import com.intellij.database.util.DasUtil
 import com.intellij.database.model.DasTable
 
+/**
+ * 入口动作：从 IDEA Database 选中表启动生成。
+ * - 收集 Database 视图选中的 DbTable
+ * - 打开生成弹框 QuickGenerateDialog
+ * - 按所选表执行生成
+ */
 class GenerateFromIdeaDatabaseAction : AnAction(), DumbAware {
     override fun update(e: AnActionEvent) {
         e.presentation.isEnabled = true
@@ -26,6 +32,7 @@ class GenerateFromIdeaDatabaseAction : AnAction(), DumbAware {
             Messages.showInfoMessage(project, "请在Database视图中选中至少一个表", "MyBatis Generator")
             return
         }
+        // 推断数据源名字/Schema 以在弹框左侧标题展示
         val dsTitle = try {
             val t = tables.firstOrNull()
             val schema = dbNameOf(t)
@@ -38,6 +45,7 @@ class GenerateFromIdeaDatabaseAction : AnAction(), DumbAware {
         val leftList = tables.map { it.name }
         val dlg = QuickGenerateDialog(project, tables.map { it.name }, dsTitle, leftList)
         if (!dlg.showAndGet()) return
+        // 收集弹框配置与选择
         val cfg = dlg.config()
         val templateRoot = dlg.templateRoot()
         val selectedNames = dlg.selectedTableNames().toSet()
@@ -98,64 +106,6 @@ class GenerateFromIdeaDatabaseAction : AnAction(), DumbAware {
                 if (!v3.isNullOrBlank()) return v3
             }
             null
-        } catch (_: Throwable) { null }
-    }
-    private fun jdbcCredsOf(ds: Any?): Pair<String?, String?>? {
-        if (ds == null) return null
-        return try {
-            val mCfg = ds::class.java.methods.firstOrNull { it.name == "getConnectionConfig" && it.parameterCount == 0 }
-            val cfg = mCfg?.invoke(ds)
-            if (cfg != null) {
-                val mu = cfg::class.java.methods.firstOrNull { it.name.lowercase() in setOf("getuser","getusername","getusername") && it.parameterCount == 0 }
-                val mp = cfg::class.java.methods.firstOrNull { it.name.lowercase() in setOf("getpassword") && it.parameterCount == 0 }
-                val u = mu?.invoke(cfg) as? String
-                val p = mp?.invoke(cfg) as? String
-                return u to p
-            }
-            null
-        } catch (_: Throwable) { null }
-    }
-    private fun listTablesBySql(url: String, user: String?, pass: String?, schema: String?): List<String>? {
-        return try {
-            val conn = if (!user.isNullOrBlank()) java.sql.DriverManager.getConnection(url, user, pass ?: "") else java.sql.DriverManager.getConnection(url)
-            val lower = url.lowercase()
-            val sql = when {
-                lower.contains("mysql") -> "SHOW TABLES"
-                lower.contains("postgresql") || lower.contains("postgres") ->
-                    if (!schema.isNullOrBlank()) "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = '$schema'"
-                    else "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema')"
-                lower.contains("sqlserver") -> "SELECT name FROM sys.tables"
-                lower.contains("oracle") ->
-                    if (!schema.isNullOrBlank()) "SELECT table_name FROM all_tables WHERE owner = '$schema'"
-                    else "SELECT table_name FROM user_tables"
-                lower.contains("sqlite") -> "SELECT name FROM sqlite_master WHERE type='table'"
-                else -> null
-            }
-            val names = mutableListOf<String>()
-            conn.use { c ->
-                if (sql != null) {
-                    c.createStatement().use { st ->
-                        val rs = st.executeQuery(sql)
-                        rs.use {
-                            while (rs.next()) {
-                                val v1 = try { rs.getString(1) } catch (_: Throwable) { null }
-                                val vTab = try { rs.getString("TABLE_NAME") } catch (_: Throwable) { null }
-                                val name = v1 ?: vTab
-                                if (!name.isNullOrBlank()) names += name
-                            }
-                        }
-                    }
-                } else {
-                    val sch = if (schema.isNullOrBlank()) null else schema
-                    c.metaData.getTables(null, sch, "%", arrayOf("TABLE")).use { rs ->
-                        while (rs.next()) {
-                            val name = rs.getString("TABLE_NAME")
-                            if (!name.isNullOrBlank()) names += name
-                        }
-                    }
-                }
-            }
-            names.sorted()
         } catch (_: Throwable) { null }
     }
     private fun parseDbFromUrl(url: String): String? {

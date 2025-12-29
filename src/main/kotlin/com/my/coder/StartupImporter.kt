@@ -5,6 +5,7 @@ import com.intellij.openapi.startup.StartupActivity
 import com.intellij.openapi.vfs.LocalFileSystem
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.charset.StandardCharsets
 
 /**
  * 项目启动后自动执行：复制插件内置模板到 my-easy-code/templates/general，
@@ -30,10 +31,49 @@ class StartupImporter : StartupActivity {
             }
         }
         run {
+            val generalReadme = destGeneral.resolve("README.md")
+            if (!Files.exists(generalReadme)) {
+                val txt = """
+                    # templates/general
+                    
+                    - 作用：存放普通代码模板（entity、service、serviceImpl、controller、mapper、mapperXml、dto、vo 等）
+                    - 使用：将 .ftl 模板放入该目录，生成弹框的“模板选择”会自动加载
+                    - 命名：建议与模板名称一致，例如 entity.ftl、service.ftl 等
+                    - 变量：支持 ${'$'}{baseDir}、${'$'}{packagePath}、${'$'}{packageName}、${'$'}{entityName}、${'$'}{tableName} 等
+                      详见项目根 README 的“模板支持的变量”
+                    """.trimIndent()
+                Files.write(generalReadme, txt.toByteArray(StandardCharsets.UTF_8))
+            }
+        }
+        run {
             val enumStream = javaClass.classLoader.getResourceAsStream("templates/enum.ftl")
             if (enumStream != null) {
                 val target = enumsDir.resolve("enum.ftl")
                 Files.copy(enumStream, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            }
+        }
+        run {
+            val enumsReadme = enumsDir.resolve("README.md")
+            if (!Files.exists(enumsReadme)) {
+                val txt = """
+                    # templates/enums
+                    
+                    - 作用：存放枚举模板，供“枚举字段”面板选择生成枚举类
+                    - 使用：将 .ftl 模板放入该目录，在“选择枚举模板”下拉中选择该模板
+                    - 变量：enumPackage、enumName、tableName、columnName
+                    - 输出：默认生成到 src/main/java/${'$'}{packagePath}/enums，可在枚举字段行“保存路径”覆盖
+                    
+                    ## 基础枚举模板示例
+                    
+                    ```ftl
+                    package ${'$'}{enumPackage};
+                    
+                    public enum ${'$'}{enumName} {
+                        ;
+                    }
+                    ```
+                """.trimIndent()
+                Files.write(enumsReadme, txt.toByteArray(StandardCharsets.UTF_8))
             }
         }
         LocalFileSystem.getInstance().refreshAndFindFileByIoFile(root.toFile())?.refresh(false, true)

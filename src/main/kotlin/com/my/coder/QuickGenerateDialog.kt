@@ -144,7 +144,8 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         refreshTemplateList()
         rc.gridy = 4; rc.weighty = 0.5; rc.fill = GridBagConstraints.BOTH
         val templatesScroll = JScrollPane(templatePanel)
-        templatesScroll.horizontalScrollBarPolicy = javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
+        templatesScroll.horizontalScrollBarPolicy = javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED
+        templatesScroll.verticalScrollBarPolicy = javax.swing.ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED
         templatesScroll.border = BorderFactory.createTitledBorder("模板选择")
         right.add(templatesScroll, rc)
         rc.gridy = 5; rc.weighty = 0.5; rc.fill = GridBagConstraints.BOTH
@@ -258,6 +259,18 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
             val vDir = LocalFileSystem.getInstance().refreshAndFindFileByIoFile(tplRoot.toFile())
             vDir?.refresh(false, true)
             ProjectView.getInstance(project).refresh()
+            run {
+                val msg = "模板已导入到 my-easy-code/templates/general 与 templates/enums"
+                com.intellij.openapi.ui.Messages.showYesNoDialog(
+                    project,
+                    msg,
+                    "导入成功",
+                    "确认",
+                    "取消",
+                    null
+                )
+                importBtn.transferFocus()
+            }
         }
         val vm = com.intellij.openapi.vfs.VirtualFileManager.getInstance()
         vfsListener = object : com.intellij.openapi.vfs.VirtualFileListener {
@@ -531,9 +544,9 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
             val st = settings.state
             val remembered = st.templateOutputs?.get(t.name)
             pathField.text = remembered ?: t.outputPath
-            pathField.textField.columns = 80
-            pathField.preferredSize = java.awt.Dimension(JBUI.scale(700), JBUI.scale(28))
-            pathField.maximumSize = java.awt.Dimension(Int.MAX_VALUE, JBUI.scale(28))
+            pathField.textField.columns = 36
+            pathField.preferredSize = java.awt.Dimension(JBUI.scale(520), JBUI.scale(28))
+            pathField.maximumSize = java.awt.Dimension(JBUI.scale(520), JBUI.scale(28))
             pathField.toolTipText = "设置该模板的保存路径（支持占位符）"
             pathField.addBrowseFolderListener(
                 "选择保存目录",
@@ -556,9 +569,9 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
             val baseName = if (t.name.equals("mapperXml", true)) "mapper" else t.name
             val defName = "\${entityName}" + baseName + "." + ext
             fileNameField.text = (rememberedFile?.takeIf { it.isNotBlank() } ?: defName)
-            fileNameField.columns = 30
-            fileNameField.preferredSize = java.awt.Dimension(JBUI.scale(300), JBUI.scale(28))
-            fileNameField.maximumSize = java.awt.Dimension(Int.MAX_VALUE, JBUI.scale(28))
+            fileNameField.columns = 24
+            fileNameField.preferredSize = java.awt.Dimension(JBUI.scale(320), JBUI.scale(28))
+            fileNameField.maximumSize = java.awt.Dimension(JBUI.scale(320), JBUI.scale(28))
             fileNameField.toolTipText = "设置生成文件名（不含目录）"
             fileNameField.document.addDocumentListener(object : javax.swing.event.DocumentListener {
                 private fun save() {
@@ -579,12 +592,18 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
             cb.addActionListener { refreshTableTabs() }
             excludeCb.addActionListener { refreshTableTabs() }
             row.add(cb, java.awt.BorderLayout.WEST)
-            val center = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 8, 0))
+            val center = JPanel()
+            center.layout = BoxLayout(center, BoxLayout.X_AXIS)
             center.add(JLabel("保存路径"))
+            center.add(javax.swing.Box.createHorizontalStrut(JBUI.scale(8)))
             center.add(pathField)
+            center.add(javax.swing.Box.createHorizontalStrut(JBUI.scale(8)))
             center.add(JLabel("文件名"))
+            center.add(javax.swing.Box.createHorizontalStrut(JBUI.scale(8)))
             center.add(fileNameField)
+            center.add(javax.swing.Box.createHorizontalStrut(JBUI.scale(16)))
             center.add(JLabel("排除字段"))
+            center.add(javax.swing.Box.createHorizontalStrut(JBUI.scale(4)))
             center.add(excludeCb)
             row.add(center, java.awt.BorderLayout.CENTER)
             templatePanel.add(row)

@@ -650,6 +650,7 @@ object Generator {
                 val dtoBase = cfg.dtoExclude ?: emptyList()
                 val voBase = cfg.voExclude ?: emptyList()
                 val unionBase = if (cfg.excludeApplyBoth) (dtoBase + voBase).distinct() else null
+                // 仅当该模板参与“排除字段”时，合并各级排除集合
                 val enabledTpls = cfg.templateExcludeTemplates ?: emptyList()
                 val exclude = if (enabledTpls.any { it.equals(tmpl.name, true) }) {
                     (unionBase ?: emptyList()) +
@@ -662,6 +663,7 @@ object Generator {
                     val hasDot = jt.contains('.')
                     if (hasDot && !jt.startsWith("java.lang") && !jt.startsWith("kotlin.")) jt else null
                 }.distinct()
+                // 模板内容来源：优先 file 路径，其次内联 content
                 val content = if (!tmpl.file.isNullOrBlank()) {
                     try {
                         val candidates = mutableListOf<Path>()
