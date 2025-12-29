@@ -3,6 +3,8 @@ package ${filePackage};
 import lombok.Data;
 import lombok.Builder;
 </#if>
+import java.io.Serializable;
+import java.io.Serial;
 <#if entityImports?? && (entityImports?size > 0)>
 <#list entityImports as im>
 import ${im};
@@ -16,7 +18,8 @@ import ${im};
 @Data
 @Builder
 </#if>
-public class ${entityName} implements java.io.Serializable {
+public class ${entityName} implements Serializable {
+    @Serial
     private static final long serialVersionUID = ${serialVersionUID}L;
 <#list table.columns as c>
 <#if !(exclude?seq_contains(c.name))>

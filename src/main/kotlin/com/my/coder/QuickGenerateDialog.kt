@@ -97,9 +97,11 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         left.alignmentX = 0f
         tableCheckboxes.clear()
         val preselect = initialSelectedNames.toSet()
+        val savedTables = st.lastSelectedTables?.toSet()
         val leftNames = leftTables ?: fetchAllTables()
         leftNames.forEach { name ->
-            val cb = JCheckBox(name, preselect.isEmpty() || preselect.contains(name))
+            val initSel = if (savedTables != null && savedTables.isNotEmpty()) savedTables.contains(name) else (preselect.isEmpty() || preselect.contains(name))
+            val cb = JCheckBox(name, initSel)
             cb.addActionListener { refreshTableTabs() }
             tableCheckboxes.add(cb)
             left.add(cb)
@@ -186,7 +188,7 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         wrapper.border = BorderFactory.createEmptyBorder(6,6,6,6)
         wrapper.add(split, BorderLayout.CENTER)
         val screen = java.awt.Toolkit.getDefaultToolkit().screenSize
-        val w = (screen.width * 0.6).toInt()
+        val w = (screen.width * 0.85).toInt()
         val h = (screen.height * 0.6).toInt()
         wrapper.preferredSize = java.awt.Dimension(w, h)
         baseDirField.toolTipText = "生成代码的基准目录"
@@ -387,6 +389,12 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         val enumTplName = project.service<GeneratorSettings>().state.enumTemplateName
         val enumTplOverrides = tableEnumTplMap.mapValues { it.value.toMap() }.filterValues { it.isNotEmpty() }
         val enumOutDirOverrides = tableEnumOutDirMap.mapValues { it.value.toMap() }.filterValues { it.isNotEmpty() }
+        // 记住上一次的选择
+        run {
+            val st = settings.state
+            st.lastSelectedTables = selectedTableNames().toMutableSet()
+            st.lastSelectedTemplates = templates.map { it.name }.toMutableSet()
+        }
         return GeneratorConfig(
             com.my.coder.config.Database("", "", "", ""),
             pkg,
@@ -532,9 +540,13 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         templateOutputFields.clear()
         templateFileNameFields.clear()
         templateExcludeFlags.clear()
+        val savedTpls = project.service<GeneratorSettings>().state.lastSelectedTemplates?.toSet()
         allTemplates.forEach { t ->
             val row = JPanel(java.awt.BorderLayout())
-            val cb = JCheckBox(t.name, true)
+            val initSelected = if (savedTpls != null) {
+                if (savedTpls.isEmpty()) true else savedTpls.contains(t.name)
+            } else true
+            val cb = JCheckBox(t.name, initSelected)
             val pathField = TextFieldWithBrowseButton()
             val fileNameField = JBTextField()
             pathField.textField.columns = 30
@@ -566,7 +578,8 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
             })
             val rememberedFile = st.templateFileNames?.get(t.name)
             val ext = extensionFor(t.fileType)
-            val baseName = if (t.name.equals("mapperXml", true)) "mapper" else t.name
+            val rawBase = if (t.name.equals("mapperXml", true)) "mapper" else t.name
+            val baseName = rawBase.replaceFirstChar { it.uppercaseChar() }
             val defName = "\${entityName}" + baseName + "." + ext
             fileNameField.text = (rememberedFile?.takeIf { it.isNotBlank() } ?: defName)
             fileNameField.columns = 24
@@ -586,7 +599,8 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
             templateCheckBoxes.add(cb)
             templateOutputFields.add(pathField)
             templateFileNameFields.add(fileNameField)
-            val excludeCb = JCheckBox("", false)
+            val excludeDefault = t.name.equals("dto", true) || t.name.equals("entity", true) || t.name.equals("vo", true)
+            val excludeCb = JCheckBox("", excludeDefault)
             excludeCb.toolTipText = "勾选后该模板参与排除字段设置"
             templateExcludeFlags.add(excludeCb)
             cb.addActionListener { refreshTableTabs() }
@@ -679,6 +693,21 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
             val dtoSel = tableDtoExcludeMap.getOrPut(table) { mutableSetOf() }
             val voSel = tableVoExcludeMap.getOrPut(table) { mutableSetOf() }
             val bothSel = tableBothExcludeMap.getOrPut(table) { mutableSetOf() }
+            run {
+                val defaults = setOf("is_deleted","update_time","create_time","update_by","create_by")
+                val present = cols.filter { defaults.contains(it.lowercase()) }.toSet()
+                if (applyBothCb.isSelected) {
+                    dtoSel.addAll(present); voSel.addAll(present); bothSel.addAll(present)
+                } else {
+                    chosenTemplateNames.forEach { name ->
+                        when (name.lowercase()) {
+                            "dto" -> dtoSel.addAll(present)
+                            "vo" -> voSel.addAll(present)
+                            else -> bothSel.addAll(present)
+                        }
+                    }
+                }
+            }
             val subTabs = javax.swing.JTabbedPane()
             fun onToggle(tplName: String, col: String, selected: Boolean) {
                 if (applyBothCb.isSelected) {

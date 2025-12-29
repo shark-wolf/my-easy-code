@@ -45,7 +45,8 @@ object TemplatePreview {
         val nameOverride = st.templateFileNames?.get(name)
         fun defaultFileNameFor(tmplName: String, entity: String): String {
             val ext = if (tmplName.equals("mapperXml", true)) "xml" else "java"
-            val base = if (tmplName.equals("mapperXml", true)) "mapper" else tmplName
+            val raw = if (tmplName.equals("mapperXml", true)) "mapper" else tmplName
+            val base = raw.replaceFirstChar { it.uppercaseChar() }
             return entity + base + "." + ext
         }
         fun expandPattern(name: String, entity: String, tableName: String): String {
@@ -58,7 +59,9 @@ object TemplatePreview {
         val defFile = expandPattern(chosenRaw, table.entityName, table.name)
         val fm = Configuration(Version("2.3.31"))
         fm.defaultEncoding = "UTF-8"
-        val tplText = VfsUtil.loadText(file)
+        fm.setNumberFormat("computer")
+        val doc = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(file)
+        val tplText = doc?.text ?: VfsUtil.loadText(file)
         val template = Template(name, StringReader(tplText), fm)
         val out = java.io.StringWriter()
         if (isEnumTmpl) {

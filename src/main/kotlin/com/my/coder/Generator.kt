@@ -592,6 +592,7 @@ object Generator {
         // Freemarker 配置
         val fm = Configuration(Version("2.3.31"))
         fm.defaultEncoding = "UTF-8"
+        fm.setNumberFormat("computer")
         var generatedCount = 0
         val errors = mutableListOf<String>()
         // 先为选中的枚举字段生成枚举类型
@@ -618,6 +619,7 @@ object Generator {
                             if (f != null && Files.exists(f)) {
                                 val fm = freemarker.template.Configuration(freemarker.template.Configuration.DEFAULT_INCOMPATIBLE_IMPROVEMENTS)
                                 fm.setDefaultEncoding("UTF-8")
+                                fm.setNumberFormat("computer")
                                 fm.setTemplateExceptionHandler(freemarker.template.TemplateExceptionHandler.RETHROW_HANDLER)
                                 val data = mapOf(
                                     "enumPackage" to (cfgEff.packageName + ".enums"),
@@ -718,7 +720,8 @@ object Generator {
                 val filePackage = pkgFromDir(finalDir)
                 val nameOverride = cfgEff.templateFileNameOverrides?.get(tmpl.name)
                 fun defaultFileNameFor(tmplName: String, fileType: String, entity: String): String {
-                    val base = if (tmplName.equals("mapperXml", true)) "mapper" else tmplName
+                    val raw = if (tmplName.equals("mapperXml", true)) "mapper" else tmplName
+                    val base = raw.replaceFirstChar { it.uppercaseChar() }
                     return entity + base
                 }
                 fun expandPattern(name: String, entity: String, table: String): String {

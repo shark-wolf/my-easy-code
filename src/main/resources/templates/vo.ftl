@@ -1,9 +1,9 @@
 package ${filePackage};
 <#if useLombok>
 import lombok.Data;
-import lombok.NoArgsConstructor;
-import lombok.AllArgsConstructor;
 </#if>
+import java.io.Serializable;
+import java.io.Serial;
 <#if voImports?? && (voImports?size > 0)>
 <#list voImports as im>
 import ${im};
@@ -15,10 +15,9 @@ import ${im};
 </#if>
 <#if useLombok>
 @Data
-@NoArgsConstructor
-@AllArgsConstructor
 </#if>
-public class ${entityName}VO implements java.io.Serializable {
+public class ${entityName}VO implements Serializable {
+    @Serial
     private static final long serialVersionUID = ${serialVersionUID}L;
 <#list table.columns as c>
 <#if !(exclude?seq_contains(c.name))>

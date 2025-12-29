@@ -2,6 +2,8 @@ package ${filePackage};
 <#if useLombok>
 import lombok.Data;
 </#if>
+import java.io.Serializable;
+import java.io.Serial;
 <#if dtoImports?? && (dtoImports?size > 0)>
 <#list dtoImports as im>
 import ${im};
@@ -15,7 +17,8 @@ import javax.validation.constraints.Size;
 <#if useLombok>
 @Data
 </#if>
-public class ${entityName}DTO implements java.io.Serializable {
+public class ${entityName}DTO implements Serializable {
+    @Serial
     private static final long serialVersionUID = ${serialVersionUID}L;
 <#list table.columns as c>
 <#if !(exclude?seq_contains(c.name))>
