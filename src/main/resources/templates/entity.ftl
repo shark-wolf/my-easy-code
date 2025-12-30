@@ -18,7 +18,7 @@ import ${im};
 @Data
 @Builder
 </#if>
-public class ${entityName} implements Serializable {
+public class ${className} implements Serializable {
     @Serial
     private static final long serialVersionUID = ${serialVersionUID}L;
 <#list table.columns as c>

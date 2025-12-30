@@ -739,11 +739,12 @@ object Generator {
                     "groovy", "gvy" -> "groovy"
                     else -> tmpl.fileType.lowercase()
                 }
+                val className = if (finalFile.contains('.')) finalFile.substringBeforeLast('.') else finalFile
                 fun effectivePackageFor(name: String): String {
                     val tmpl2 = cfgEff.templates.firstOrNull { it.name.equals(name, true) }
                     if (tmpl2 != null) {
                         val defPath2 = expandPath(tmpl2.outputPath, base, cfgEff.packageName, t)
-                        val defDir2 = Path.of(defPath2).parent
+                        val defDir2 = Path.of(defPath2)
                         val ovRaw2 = cfgEff.templateDirOverrides?.get(tmpl2.name)
                         val dir2 = if (!ovRaw2.isNullOrBlank()) {
                             val pkgPath = cfgEff.packageName.replace('.', '/')
@@ -761,6 +762,13 @@ object Generator {
                         return pkgFromDir(dir2)
                     }
                     return cfgEff.packageName
+                }
+                fun classNameFor(name: String): String {
+                    val tmpl2 = cfgEff.templates.firstOrNull { it.name.equals(name, true) } ?: return name
+                    val ov = cfgEff.templateFileNameOverrides?.get(tmpl2.name)
+                    val raw = if (!ov.isNullOrBlank()) ov!! else defaultFileNameFor(tmpl2.name, tmpl2.fileType, t.entityName)
+                    val chosen = expandPattern(raw, t.entityName, t.name)
+                    return if (chosen.contains('.')) chosen.substringBeforeLast('.') else chosen
                 }
                 val dtoPackage = effectivePackageFor("dto")
                 val voPackage = effectivePackageFor("vo")
@@ -799,6 +807,14 @@ object Generator {
                     "mapperPackage" to mapperPackage,
                     "controllerPackage" to controllerPackage,
                     "convertPackage" to convertPackage,
+                    "className" to className,
+                    "dtoClassName" to classNameFor("dto"),
+                    "voClassName" to classNameFor("vo"),
+                    "entityClassName" to classNameFor("entity"),
+                    "mapperClassName" to classNameFor("mapper"),
+                    "serviceClassName" to classNameFor("service"),
+                    "serviceImplClassName" to classNameFor("serviceImpl"),
+                    "controllerClassName" to classNameFor("controller"),
                     "serialVersionUID" to serialUid
                 )
                 // 写文件 + 刷新 VFS + PSI 格式化
@@ -842,7 +858,7 @@ object Generator {
                         append("time=").append(stamp).append('\n')
                         errors.forEach { append(it).append('\n') }
                     }
-                    Files.writeString(logFile, content, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND)
+                    Files.writeString(logFile, content, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING, java.nio.file.StandardOpenOption.WRITE)
                 } catch (_: Throwable) {}
             }
             try {

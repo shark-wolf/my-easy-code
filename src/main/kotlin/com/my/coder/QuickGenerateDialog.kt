@@ -599,11 +599,14 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
             templateCheckBoxes.add(cb)
             templateOutputFields.add(pathField)
             templateFileNameFields.add(fileNameField)
-            val excludeDefault = t.name.equals("dto", true) || t.name.equals("entity", true) || t.name.equals("vo", true)
+            val excludeDefault = t.name.equals("dto", true) || t.name.equals("vo", true)
             val excludeCb = JCheckBox("", excludeDefault)
             excludeCb.toolTipText = "勾选后该模板参与排除字段设置"
             templateExcludeFlags.add(excludeCb)
-            cb.addActionListener { refreshTableTabs() }
+            cb.addActionListener {
+                if (!cb.isSelected) excludeCb.isSelected = false
+                refreshTableTabs()
+            }
             excludeCb.addActionListener { refreshTableTabs() }
             row.add(cb, java.awt.BorderLayout.WEST)
             val center = JPanel()

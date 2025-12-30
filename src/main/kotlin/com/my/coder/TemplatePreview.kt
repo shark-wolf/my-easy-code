@@ -55,6 +55,12 @@ object TemplatePreview {
             s = s.replace("\${tableName}", tableName)
             return s
         }
+        fun classNameFor(tmplName: String, entity: String, tableName: String): String {
+            val ov = st.templateFileNames?.get(tmplName)
+            val raw = if (!ov.isNullOrBlank()) ov!! else defaultFileNameFor(tmplName, entity)
+            val chosen = expandPattern(raw, entity, tableName)
+            return if (chosen.contains('.')) chosen.substringBeforeLast('.') else chosen
+        }
         val chosenRaw = if (!nameOverride.isNullOrBlank()) nameOverride!! else defaultFileNameFor(name, table.entityName)
         val defFile = expandPattern(chosenRaw, table.entityName, table.name)
         val fm = Configuration(Version("2.3.31"))
@@ -82,6 +88,7 @@ object TemplatePreview {
                 val hasDot = jt.contains('.')
                 if (hasDot && !jt.startsWith("java.lang") && !jt.startsWith("kotlin.")) jt else null
             }.distinct()
+            val className = defFile.substringBeforeLast('.', defFile)
             val dtoPkg = filePackage
             val voPkg = filePackage
             val entityPkg = filePackage
@@ -102,6 +109,14 @@ object TemplatePreview {
                 "filePackage" to filePackage,
                 "table" to table,
                 "entityName" to table.entityName,
+                "className" to className,
+                "dtoClassName" to classNameFor("dto", table.entityName, table.name),
+                "voClassName" to classNameFor("vo", table.entityName, table.name),
+                "entityClassName" to classNameFor("entity", table.entityName, table.name),
+                "mapperClassName" to classNameFor("mapper", table.entityName, table.name),
+                "serviceClassName" to classNameFor("service", table.entityName, table.name),
+                "serviceImplClassName" to classNameFor("serviceImpl", table.entityName, table.name),
+                "controllerClassName" to classNameFor("controller", table.entityName, table.name),
                 "stripPrefix" to (st.stripTablePrefix ?: ""),
                 "author" to (st.author ?: System.getProperty("user.name")),
                 "date" to java.time.LocalDate.now().toString(),

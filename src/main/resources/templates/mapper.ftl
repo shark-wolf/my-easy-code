@@ -3,5 +3,5 @@ package ${filePackage};
 import org.apache.ibatis.annotations.Mapper;
 
 @Mapper
-public interface ${entityName}Mapper {
+public interface ${className} {
 }

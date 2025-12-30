@@ -4,12 +4,16 @@ import lombok.Data;
 </#if>
 import java.io.Serializable;
 import java.io.Serial;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+
 <#if dtoImports?? && (dtoImports?size > 0)>
 <#list dtoImports as im>
 import ${im};
 </#list>
 </#if>
-import javax.validation.constraints.Size;
+
 
 <#if table.comment?? && table.comment?length gt 0>
 /** ${table.comment} */
@@ -17,7 +21,7 @@ import javax.validation.constraints.Size;
 <#if useLombok>
 @Data
 </#if>
-public class ${entityName}DTO implements Serializable {
+public class ${className} implements Serializable {
     @Serial
     private static final long serialVersionUID = ${serialVersionUID}L;
 <#list table.columns as c>

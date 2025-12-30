@@ -16,7 +16,7 @@ import ${im};
 <#if useLombok>
 @Data
 </#if>
-public class ${entityName}VO implements Serializable {
+public class ${className} implements Serializable {
     @Serial
     private static final long serialVersionUID = ${serialVersionUID}L;
 <#list table.columns as c>

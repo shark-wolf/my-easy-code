@@ -1,10 +1,10 @@
 package ${filePackage};
 
 import java.util.List;
-import ${dtoPackage}.${entityName}DTO;
-import ${voPackage}.${entityName}VO;
+import ${dtoPackage}.${dtoClassName};
+import ${voPackage}.${voClassName};
 
-public interface ${entityName}Service {
+public interface ${className} {
 <#assign pkType="Long">
 <#list table.columns as c>
 <#if c.primaryKey>
@@ -12,9 +12,9 @@ public interface ${entityName}Service {
 </#if>
 </#list>
     
-    List<${entityName}VO> list();
-    Boolean add(${entityName}DTO dto);
-    Boolean update(${entityName}DTO dto);
-    ${entityName}VO getById(${pkType} id);
+    List<${voClassName}> list();
+    Boolean add(${dtoClassName} dto);
+    Boolean update(${dtoClassName} dto);
+    ${voClassName} getById(${pkType} id);
     Boolean delete(${pkType} id);
 }

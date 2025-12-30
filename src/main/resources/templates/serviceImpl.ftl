@@ -2,14 +2,14 @@ package ${filePackage};
 
 import org.springframework.stereotype.Service;
 import java.util.List;
-import ${mapperPackage}.${entityName}Mapper;
-import ${entityPackage}.${entityName};
-import ${servicePackage}.${entityName}Service;
-import ${dtoPackage}.${entityName}DTO;
-import ${voPackage}.${entityName}VO;
+import ${mapperPackage}.${mapperClassName};
+import ${entityPackage}.${entityClassName};
+import ${servicePackage}.${serviceClassName};
+import ${dtoPackage}.${dtoClassName};
+import ${voPackage}.${voClassName};
 
 @Service
-public class ${entityName}ServiceImpl implements ${entityName}Service {
+public class ${className} implements ${serviceClassName} {
 
 <#assign pkType="Long">
 <#list table.columns as c>
@@ -20,25 +20,25 @@ public class ${entityName}ServiceImpl implements ${entityName}Service {
    
 
     @Override
-    public List<${entityName}VO> list() {
+    public List<${voClassName}> list() {
 
         return null;
     }
 
     @Override
-    public Boolean add(${entityName}DTO dto) {
+    public Boolean add(${dtoClassName} dto) {
 
         return null;
     }
 
     @Override
-    public Boolean update(${entityName}DTO dto) {
+    public Boolean update(${dtoClassName} dto) {
    
         return null;
     }
 
      @Override
-    public ${entityName}VO getById(${pkType} id) {
+    public ${voClassName} getById(${pkType} id) {
     
         return null;
     }
