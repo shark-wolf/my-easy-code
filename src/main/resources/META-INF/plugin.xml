@@ -2,6 +2,7 @@
   <id>com.my.coder</id>
   <name>My-Easy-Code</name>
   <vendor email="dev@example.com">Neo</vendor>
+  <version>1.0.0</version>
   <description>
   Generate MyBatis code with custom templates and output paths.
   github: https://github.com/shark-wolf/my-easy-code
