@@ -20,14 +20,19 @@ class StartupImporter : StartupActivity {
         val enumsDir = templatesDir.resolve("enums")
         try { Files.createDirectories(destGeneral) } catch (_: Throwable) {}
         try { Files.createDirectories(enumsDir) } catch (_: Throwable) {}
-        // 取消与 mapper 映射相关的初始化
-        // 内置模板清单（按需扩展）
-        val names = listOf("entity","mapper","mapperXml","service","serviceImpl","controller","dto","vo")
-        names.forEach { n ->
-            val inStream = javaClass.classLoader.getResourceAsStream("templates/$n.ftl")
-            if (inStream != null) {
-                val target = destGeneral.resolve("$n.ftl")
-                Files.copy(inStream, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+        val needImportGeneral = try {
+            Files.list(destGeneral).use { s ->
+                s.anyMatch { Files.isRegularFile(it) && it.fileName.toString().lowercase().endsWith(".ftl") }
+            }.not()
+        } catch (_: Throwable) { true }
+        if (needImportGeneral) {
+            val names = listOf("entity","mapper","mapperXml","service","serviceImpl","controller","dto","vo")
+            names.forEach { n ->
+                val inStream = javaClass.classLoader.getResourceAsStream("templates/$n.ftl")
+                if (inStream != null) {
+                    val target = destGeneral.resolve("$n.ftl")
+                    Files.copy(inStream, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                }
             }
         }
         run {
@@ -49,7 +54,7 @@ class StartupImporter : StartupActivity {
             val enumStream = javaClass.classLoader.getResourceAsStream("templates/enum.ftl")
             if (enumStream != null) {
                 val target = enumsDir.resolve("enum.ftl")
-                Files.copy(enumStream, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                if (!Files.exists(target)) Files.copy(enumStream, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
             }
         }
         run {

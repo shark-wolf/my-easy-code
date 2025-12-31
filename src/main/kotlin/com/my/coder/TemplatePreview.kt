@@ -95,7 +95,7 @@ object TemplatePreview {
             val servicePkg = filePackage
             val mapperPkg = filePackage
             val controllerPkg = filePackage
-            val convertPkg = "$pkg.convert"
+            val convertPkg = filePackage
             val serialUid = run {
                 val md = java.security.MessageDigest.getInstance("SHA-1")
                 md.update((pkg + "." + table.entityName + "." + name).toByteArray(java.nio.charset.StandardCharsets.UTF_8))
@@ -104,7 +104,7 @@ object TemplatePreview {
                 val v = bb.long
                 if (v < 0) -v else v
             }
-            val data = mapOf(
+            val data = mutableMapOf<String, Any>(
                 "packageName" to pkg,
                 "filePackage" to filePackage,
                 "table" to table,
@@ -117,6 +117,8 @@ object TemplatePreview {
                 "serviceClassName" to classNameFor("service", table.entityName, table.name),
                 "serviceImplClassName" to classNameFor("serviceImpl", table.entityName, table.name),
                 "controllerClassName" to classNameFor("controller", table.entityName, table.name),
+                "convertClassName" to classNameFor("convert", table.entityName, table.name),
+                "mapperXmlClassName" to classNameFor("mapperXml", table.entityName, table.name),
                 "stripPrefix" to (st.stripTablePrefix ?: ""),
                 "author" to (st.author ?: System.getProperty("user.name")),
                 "date" to java.time.LocalDate.now().toString(),
@@ -134,8 +136,41 @@ object TemplatePreview {
                 "mapperPackage" to mapperPkg,
                 "controllerPackage" to controllerPkg,
                 "convertPackage" to convertPkg,
+                "serviceImplPackage" to servicePkg,
+                "mapperXmlPackage" to mapperPkg,
                 "serialVersionUID" to serialUid
             )
+            run {
+                data[name + "Package"] = filePackage
+                data[name + "ClassName"] = className
+            }
+            run {
+                val tplRoot = Path.of(baseDir).resolve("my-easy-code").resolve("templates").resolve("general")
+                val names = try {
+                    if (Files.exists(tplRoot)) {
+                        Files.list(tplRoot).use { s ->
+                            s.filter { Files.isRegularFile(it) && it.fileName.toString().lowercase().endsWith(".ftl") }
+                                .map { it.fileName.toString().substringBeforeLast('.') }
+                                .toList()
+                        }
+                    } else emptyList()
+                } catch (_: Throwable) { emptyList() }
+                names.forEach { nm ->
+                    val defOut = suggestOutput(nm)
+                    val p0 = expand(defOut, baseDir, pkg, table)
+                    val d0 = Path.of(p0)
+                    val ovRaw = st.templateOutputs?.get(nm)
+                    val finalD = if (!ovRaw.isNullOrBlank()) {
+                        val ep = expand(ovRaw!!, baseDir, pkg, table)
+                        val ov = Path.of(ep)
+                        val last = ov.fileName?.toString() ?: ""
+                        if (last.contains('.')) ov.parent ?: ov else ov
+                    } else d0
+                    val pkgFor = packageFromDir(finalD, baseDir, pkg)
+                    data[nm + "Package"] = pkgFor
+                    data[nm + "ClassName"] = classNameFor(nm, table.entityName, table.name)
+                }
+            }
             template.process(data, out)
             val dlg = com.my.coder.ui.TemplatePreviewDialog(project, defFile, out.toString())
             dlg.show()

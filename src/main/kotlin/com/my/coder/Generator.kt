@@ -776,7 +776,7 @@ object Generator {
                 val servicePackage = effectivePackageFor("service")
                 val mapperPackage = effectivePackageFor("mapper")
                 val controllerPackage = effectivePackageFor("controller")
-                val convertPackage = cfgEff.packageName + ".convert"
+                val convertPackage = effectivePackageFor("convert")
                 val serialUid = run {
                     val md = java.security.MessageDigest.getInstance("SHA-1")
                     md.update((cfgEff.packageName + "." + t.entityName + "." + tmpl.name).toByteArray(StandardCharsets.UTF_8))
@@ -785,7 +785,7 @@ object Generator {
                     val v = bb.long
                     if (v < 0) -v else v
                 }
-                val data = mapOf(
+                val data = mutableMapOf<String, Any>(
                     "packageName" to cfgEff.packageName,
                     "filePackage" to filePackage,
                     "table" to t,
@@ -815,8 +815,15 @@ object Generator {
                     "serviceClassName" to classNameFor("service"),
                     "serviceImplClassName" to classNameFor("serviceImpl"),
                     "controllerClassName" to classNameFor("controller"),
+                    "convertClassName" to classNameFor("convert"),
                     "serialVersionUID" to serialUid
                 )
+                cfgEff.templates.forEach { tt ->
+                    val keyPkg = tt.name + "Package"
+                    val keyCls = tt.name + "ClassName"
+                    data[keyPkg] = effectivePackageFor(tt.name)
+                    data[keyCls] = classNameFor(tt.name)
+                }
                 // 写文件 + 刷新 VFS + PSI 格式化
                 ApplicationManager.getApplication().runWriteAction {
                     try {
