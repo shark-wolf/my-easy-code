@@ -60,6 +60,23 @@
   - enumName：枚举类名（如 `UserStatusEnum`）
   - tableName：当前表名
   - columnName：当前列名
+  - enumItems：当列备注包含“代码-描述”对时抽取的列表，元素字段为 `code`、`label`、`name`
+    - 示例循环：
+      ```
+      <#list enumItems as it>
+      ${it.name}("${it.code}", "${it.label}")
+      </#list>
+      ```
+
+### 模板开关变量 isEmptyImpl
+- 含义：在模板选择列表的“排除字段”后有“空实现”复选框；勾选后该模板渲染时注入变量 `isEmptyImpl = true`
+- 使用：
+  ```
+  <#if isEmptyImpl>
+  // 生成空实现的分支
+  </#if>
+  ```
+- 适用范围：所有参与生成的模板均可使用该变量；未勾选为 `false`
 
 - 输出路径与文件名占位符
   - ${baseDir}：生成基准目录

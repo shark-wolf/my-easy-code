@@ -8,16 +8,21 @@ import com.intellij.testFramework.LightVirtualFile
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.database.util.DasUtil
 import com.intellij.database.psi.DbPsiFacade
+import com.intellij.database.psi.DbTable
 import com.my.coder.config.ColumnMeta
 import com.my.coder.config.TableMeta
 import com.my.coder.settings.GeneratorSettings
 import com.intellij.openapi.components.service
+import com.intellij.openapi.actionSystem.CommonDataKeys
+import com.intellij.openapi.actionSystem.LangDataKeys
+import com.intellij.ide.DataManager
 import freemarker.template.Configuration
 import freemarker.template.Template
 import freemarker.template.Version
 import java.io.StringReader
 import java.nio.file.Path
 import java.nio.file.Files
+import java.util.concurrent.TimeUnit
 
 object TemplatePreview {
     fun open(project: Project, file: VirtualFile) {
@@ -30,7 +35,7 @@ object TemplatePreview {
             p.contains("/my-easy-code/templates/enums/") || name.lowercase() == "enum" || file.name.lowercase().contains("enum")
         } catch (_: Throwable) { false }
         val defOut = suggestOutput(name)
-        val table = resolveTable(project) ?: sampleTable()
+        val table = resolveSelectedTable(project) ?: resolveTable(project) ?: sampleTable()
         val defPath = expand(defOut, baseDir, pkg, table)
         val defDir = Path.of(defPath)
         val defFile0 = "file"
@@ -71,13 +76,52 @@ object TemplatePreview {
         val template = Template(name, StringReader(tplText), fm)
         val out = java.io.StringWriter()
         if (isEnumTmpl) {
-            val col = table.columns.firstOrNull()?.name ?: "status"
-            val enumName = "${table.entityName}${toCamelUpper(col)}Enum"
+            val priorities = listOf("status","state","type","category","flag","enabled","is_deleted","deleted")
+            val names = table.columns.map { it.name }.map { it.lowercase() }
+            val pick = priorities.firstOrNull { names.contains(it) }
+            val colMeta = if (pick != null) table.columns.firstOrNull { it.name.equals(pick, true) } else table.columns.firstOrNull()
+            val colName = colMeta?.name ?: "status"
+            val enumName = "${table.entityName}${toCamelUpper(colName)}Enum"
+            fun sanitizeEnumName(s: String): String {
+                val base = s.trim().replace('[', '_').replace(']', '_')
+                    .replace('-', '_').replace('—','_').replace('－','_')
+                    .replace(' ', '_').replace('.', '_').replace('/', '_')
+                val only = base.map { ch -> if (ch.isLetterOrDigit() || ch == '_') ch else '_' }.joinToString("")
+                val up = only.uppercase()
+                return if (up.isNotBlank()) up else "UNDEFINED"
+            }
+            fun parseEnumItems(comment: String?): List<Map<String, String>> {
+                if (comment.isNullOrBlank()) return emptyList()
+                val colonIdx = listOf('：', ':').map { ch -> comment.indexOf(ch) }.firstOrNull { it >= 0 } ?: -1
+                val src = if (colonIdx >= 0) comment.substring(colonIdx + 1) else comment
+                val text = src.replace('；', ',').replace('，', ',').replace(';', ',')
+                val parts = text.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+                val items = mutableListOf<Map<String, String>>()
+                parts.forEach { p ->
+                    val seg = p.split('-', '—', '－', ':').map { it.trim() }.filter { it.isNotEmpty() }
+                    if (seg.size >= 2) {
+                        val code = seg[0]
+                        val label = seg.subList(1, seg.size).joinToString("-")
+                        items += mapOf(
+                            "code" to code,
+                            "label" to label,
+                            "name" to sanitizeEnumName(code)
+                        )
+                    }
+                }
+                return items
+            }
+            val enumItems = parseEnumItems(try { colMeta?.comment } catch (_: Throwable) { null })
             val data = mapOf(
+                "packageName" to pkg,
                 "enumPackage" to (pkg + ".enums"),
+                "filePackage" to (pkg + ".enums"),
                 "enumName" to enumName,
+                "className" to enumName,
                 "tableName" to table.name,
-                "columnName" to col
+                "columnName" to colName,
+                "columnComment" to (try { colMeta?.comment } catch (_: Throwable) { null } ?: ""),
+                "enumItems" to enumItems
             )
             template.process(data, out)
             val dlg = com.my.coder.ui.TemplatePreviewDialog(project, enumName + ".java", out.toString())
@@ -109,6 +153,7 @@ object TemplatePreview {
                 "filePackage" to filePackage,
                 "table" to table,
                 "entityName" to table.entityName,
+                "isEmptyImpl" to false,
                 "className" to className,
                 "dtoClassName" to classNameFor("dto", table.entityName, table.name),
                 "voClassName" to classNameFor("vo", table.entityName, table.name),
@@ -238,6 +283,28 @@ object TemplatePreview {
                     cols += ColumnMeta(c.name, typeName, nullable, primary, javaType, toCamelLower(c.name), size, try { c.comment } catch (_: Throwable) { null })
                 }
                 return TableMeta(t.name, toCamelUpper(t.name), cols, try { t.comment } catch (_: Throwable) { null })
+            }
+        }
+        return null
+    }
+    private fun resolveSelectedTable(project: Project): TableMeta? {
+        val st = project.service<GeneratorSettings>().state
+        val last = st.lastSelectedTables?.firstOrNull() ?: return null
+        val facade = DbPsiFacade.getInstance(project)
+        facade.dataSources.forEach { src ->
+            for (t in DasUtil.getTables(src.delegate)) {
+                if (t.name == last) {
+                    val cols = mutableListOf<ColumnMeta>()
+                    for (c in DasUtil.getColumns(t)) {
+                        val typeName = c.dataType.typeName
+                        val size = c.dataType.size
+                        val nullable = !c.isNotNull
+                        val primary = DasUtil.isPrimary(c)
+                        val javaType = com.my.coder.type.TypeMapper.toJavaType(typeName, size ?: 0, nullable)
+                        cols += ColumnMeta(c.name, typeName, nullable, primary, javaType, toCamelLower(c.name), size, try { c.comment } catch (_: Throwable) { null })
+                    }
+                    return TableMeta(t.name, toCamelUpper(t.name), cols, try { t.comment } catch (_: Throwable) { null })
+                }
             }
         }
         return null

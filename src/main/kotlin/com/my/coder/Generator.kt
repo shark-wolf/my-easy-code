@@ -606,38 +606,91 @@ object Generator {
                     val enumName = "${t.entityName}${toCamelUpper(col)}Enum"
                     val overrideDirRaw = cfgEff.tableEnumOutputDirOverrides?.get(t.name)?.get(col)
                     val outDir = if (!overrideDirRaw.isNullOrBlank()) {
-                        Path.of(overrideDirRaw)
+                        val expanded = expandPath(overrideDirRaw!!, base, cfgEff.packageName, t)
+                        val ov = Path.of(expanded)
+                        val last = ov.fileName?.toString() ?: ""
+                        if (last.contains('.')) ov.parent ?: ov else ov
                     } else enumBaseDir
                     try { Files.createDirectories(outDir) } catch (_: Throwable) {}
                     val target = outDir.resolve("$enumName.java")
                     try {
-                        val tplName = (cfgEff.tableEnumTemplateOverrides?.get(t.name)?.get(col)) ?: cfgEff.enumTemplateName
+                        val tplNameRaw = (cfgEff.tableEnumTemplateOverrides?.get(t.name)?.get(col)) ?: cfgEff.enumTemplateName
+                        val tplName = tplNameRaw?.trim()
                         val content: String = if (!tplName.isNullOrBlank() && tplName != "内置") {
                             val baseProj = project.basePath
                             val enumDir = if (baseProj != null) Path.of(baseProj).resolve("my-easy-code").resolve("templates").resolve("enums") else null
-                            val f = enumDir?.resolve(tplName)
-                            if (f != null && Files.exists(f)) {
+                            val generalDir = if (baseProj != null) Path.of(baseProj).resolve("my-easy-code").resolve("templates").resolve("general") else null
+                            val tryName = tplName!!
+                            val tryNameFtl = if (tryName.lowercase().endsWith(".ftl")) tryName else "$tryName.ftl"
+                            val candidates = sequenceOf(
+                                enumDir?.resolve(tryName),
+                                enumDir?.resolve(tryNameFtl),
+                                generalDir?.resolve(tryName),
+                                generalDir?.resolve(tryNameFtl)
+                            ).filterNotNull().filter { Files.exists(it) }.toList()
+                            val f = candidates.firstOrNull()
+                            if (f != null) {
                                 val fm = freemarker.template.Configuration(freemarker.template.Configuration.DEFAULT_INCOMPATIBLE_IMPROVEMENTS)
                                 fm.setDefaultEncoding("UTF-8")
                                 fm.setNumberFormat("computer")
                                 fm.setTemplateExceptionHandler(freemarker.template.TemplateExceptionHandler.RETHROW_HANDLER)
+                                val colMeta = t.columns.firstOrNull { it.name == col }
+                                fun sanitizeEnumName(s: String): String {
+                                    val base = s.trim().replace('[', '_').replace(']', '_')
+                                        .replace('-', '_').replace('—','_').replace('－','_')
+                                        .replace(' ', '_').replace('.', '_').replace('/', '_')
+                                    val only = base.map { ch ->
+                                        if (ch.isLetterOrDigit() || ch == '_') ch else '_'
+                                    }.joinToString("")
+                                    val up = only.uppercase()
+                                    return if (up.isNotBlank()) up else "UNDEFINED"
+                                }
+                                fun parseEnumItems(comment: String?): List<Map<String, String>> {
+                                    if (comment.isNullOrBlank()) return emptyList()
+                                    val colonIdx = listOf('：', ':').map { ch -> comment.indexOf(ch) }.firstOrNull { it >= 0 } ?: -1
+                                    val src = if (colonIdx >= 0) comment.substring(colonIdx + 1) else comment
+                                    val text = src.replace('；', ',').replace('，', ',').replace(';', ',')
+                                    val parts = text.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+                                    val items = mutableListOf<Map<String, String>>()
+                                    parts.forEach { p ->
+                                        val seg = p.split('-', '—', '－', ':').map { it.trim() }.filter { it.isNotEmpty() }
+                                        if (seg.size >= 2) {
+                                            val code = seg[0]
+                                            val label = seg.subList(1, seg.size).joinToString("-")
+                                            items += mapOf(
+                                                "code" to code,
+                                                "label" to label,
+                                                "name" to sanitizeEnumName(code)
+                                            )
+                                        }
+                                    }
+                                    return items
+                                }
+                                val enumItems = parseEnumItems(try { colMeta?.comment } catch (_: Throwable) { null })
                                 val data = mapOf(
+                                    "packageName" to cfgEff.packageName,
                                     "enumPackage" to (cfgEff.packageName + ".enums"),
+                                    "filePackage" to (cfgEff.packageName + ".enums"),
                                     "enumName" to enumName,
+                                    "className" to enumName,
                                     "tableName" to t.name,
-                                    "columnName" to col
+                                    "columnName" to col,
+                                    "columnComment" to (try { colMeta?.comment } catch (_: Throwable) { null } ?: ""),
+                                    "enumItems" to enumItems
                                 )
                                 val template = Template(tplName, StringReader(Files.readString(f)), fm)
                                 val sw = java.io.StringWriter()
                                 template.process(data, sw)
                                 sw.toString()
                             } else {
+                                errors += "枚举模板未找到: $tryName (表:${t.name}, 列:$col)"
                                 "package ${cfgEff.packageName}.enums;\n\npublic enum $enumName {\n\n}\n"
                             }
                         } else {
                             "package ${cfgEff.packageName}.enums;\n\npublic enum $enumName {\n\n}\n"
                         }
                         Files.write(target, content.toByteArray(StandardCharsets.UTF_8))
+                        generatedCount++
                         val vDir = LocalFileSystem.getInstance().refreshAndFindFileByIoFile(enumBaseDir.toFile())
                         vDir?.refresh(false, true)
                     } catch (_: Throwable) {}
@@ -652,14 +705,15 @@ object Generator {
                 val dtoBase = cfg.dtoExclude ?: emptyList()
                 val voBase = cfg.voExclude ?: emptyList()
                 val unionBase = if (cfg.excludeApplyBoth) (dtoBase + voBase).distinct() else null
-                // 仅当该模板参与“排除字段”时，合并各级排除集合
-                val enabledTpls = cfg.templateExcludeTemplates ?: emptyList()
-                val exclude = if (enabledTpls.any { it.equals(tmpl.name, true) }) {
-                    (unionBase ?: emptyList()) +
+                val exclude = when (tmpl.name.lowercase()) {
+                    "dto" -> (unionBase ?: dtoBase) +
                             bothEx +
-                            (cfg.tableDtoExclude?.get(t.name) ?: emptyList()) +
+                            (cfg.tableDtoExclude?.get(t.name) ?: emptyList())
+                    "vo" -> (unionBase ?: voBase) +
+                            bothEx +
                             (cfg.tableVoExclude?.get(t.name) ?: emptyList())
-                } else emptyList()
+                    else -> (unionBase ?: emptyList()) + bothEx
+                }
                 val imps = t.columns.mapNotNull {
                     val jt = it.javaType
                     val hasDot = jt.contains('.')
@@ -694,7 +748,9 @@ object Generator {
                 val template = Template(tmpl.name, StringReader(content), fm)
                 val defaultPath = expandPath(tmpl.outputPath, base, cfgEff.packageName, t)
                 val defDir = Path.of(defaultPath)
-                val overrideRaw = cfgEff.templateDirOverrides?.get(tmpl.name)
+                val perTableDirOverride = cfgEff.tableTemplateDirOverrides?.get(t.name)?.get(tmpl.name)
+                val globalDirOverride = cfgEff.templateDirOverrides?.get(tmpl.name)
+                val overrideRaw = perTableDirOverride?.takeIf { it.isNotBlank() } ?: globalDirOverride
                 val finalDir = if (!overrideRaw.isNullOrBlank()) {
                     val pkgPath = cfgEff.packageName.replace('.', '/')
                     var p = overrideRaw
@@ -718,7 +774,8 @@ object Generator {
                     }
                 }
                 val filePackage = pkgFromDir(finalDir)
-                val nameOverride = cfgEff.templateFileNameOverrides?.get(tmpl.name)
+                val perTableFileOverride = cfgEff.tableTemplateFileNameOverrides?.get(t.name)?.get(tmpl.name)
+                val nameOverride = perTableFileOverride?.takeIf { it.isNotBlank() } ?: cfgEff.templateFileNameOverrides?.get(tmpl.name)
                 fun defaultFileNameFor(tmplName: String, fileType: String, entity: String): String {
                     val raw = if (tmplName.equals("mapperXml", true)) "mapper" else tmplName
                     val base = raw.replaceFirstChar { it.uppercaseChar() }
@@ -745,7 +802,8 @@ object Generator {
                     if (tmpl2 != null) {
                         val defPath2 = expandPath(tmpl2.outputPath, base, cfgEff.packageName, t)
                         val defDir2 = Path.of(defPath2)
-                        val ovRaw2 = cfgEff.templateDirOverrides?.get(tmpl2.name)
+                        val ovRaw2 = (cfgEff.tableTemplateDirOverrides?.get(t.name)?.get(tmpl2.name))?.takeIf { it.isNotBlank() }
+                            ?: cfgEff.templateDirOverrides?.get(tmpl2.name)
                         val dir2 = if (!ovRaw2.isNullOrBlank()) {
                             val pkgPath = cfgEff.packageName.replace('.', '/')
                             var p2 = ovRaw2
@@ -764,9 +822,11 @@ object Generator {
                     return cfgEff.packageName
                 }
                 fun classNameFor(name: String): String {
-                    val tmpl2 = cfgEff.templates.firstOrNull { it.name.equals(name, true) } ?: return name
-                    val ov = cfgEff.templateFileNameOverrides?.get(tmpl2.name)
-                    val raw = if (!ov.isNullOrBlank()) ov!! else defaultFileNameFor(tmpl2.name, tmpl2.fileType, t.entityName)
+                    val tmpl2 = cfgEff.templates.firstOrNull { it.name.equals(name, true) }
+                    val ov = (cfgEff.tableTemplateFileNameOverrides?.get(t.name)?.get(name))?.takeIf { it.isNotBlank() }
+                        ?: cfgEff.templateFileNameOverrides?.get(name)
+                    val fileType = if (name.equals("mapperXml", true)) "xml" else "java"
+                    val raw = if (!ov.isNullOrBlank()) ov!! else defaultFileNameFor(name, fileType, t.entityName)
                     val chosen = expandPattern(raw, t.entityName, t.name)
                     return if (chosen.contains('.')) chosen.substringBeforeLast('.') else chosen
                 }
@@ -785,15 +845,22 @@ object Generator {
                     val v = bb.long
                     if (v < 0) -v else v
                 }
+                val isEmptyImpl = (cfgEff.tableTitleEmptyImplementTemplates?.get(t.name)?.get(tmpl.name) == true)
+                    || ((cfgEff.titleEmptyImplementTemplates?.get(tmpl.name)) == true)
+                val enabledTplsGlobal = cfg.templateExcludeTemplates ?: emptyList()
+                val enabledTplsPerTable = cfg.tableTemplateExcludeTemplates?.get(t.name) ?: emptyList()
+                val enabledTplsForThis = enabledTplsGlobal + enabledTplsPerTable
+                val excludeEff = if (enabledTplsForThis.any { it.equals(tmpl.name, true) }) exclude else emptyList()
                 val data = mutableMapOf<String, Any>(
                     "packageName" to cfgEff.packageName,
                     "filePackage" to filePackage,
                     "table" to t,
                     "entityName" to t.entityName,
+                    "isEmptyImpl" to isEmptyImpl,
                     "stripPrefix" to (cfgEff.stripTablePrefix ?: ""),
                     "author" to (cfgEff.author ?: System.getProperty("user.name")),
                     "date" to java.time.LocalDate.now().toString(),
-                    "exclude" to exclude,
+                    "exclude" to excludeEff,
                     "dtoExclude" to (cfgEff.dtoExclude ?: emptyList()),
                     "voExclude" to (cfgEff.voExclude ?: emptyList()),
                     "useLombok" to (cfgEff.useLombok),

@@ -31,7 +31,13 @@ data class GeneratorConfig(
     ,
     val enumTemplateName: String? = null,
     val tableEnumTemplateOverrides: Map<String, Map<String, String>>? = null,
-    val tableEnumOutputDirOverrides: Map<String, Map<String, String>>? = null
+    val tableEnumOutputDirOverrides: Map<String, Map<String, String>>? = null,
+    val titleEmptyImplementTemplates: Map<String, Boolean>? = null,
+    val tableEnabledTemplates: Map<String, List<String>>? = null,
+    val tableTemplateDirOverrides: Map<String, Map<String, String>>? = null,
+    val tableTemplateFileNameOverrides: Map<String, Map<String, String>>? = null,
+    val tableTitleEmptyImplementTemplates: Map<String, Map<String, Boolean>>? = null,
+    val tableTemplateExcludeTemplates: Map<String, List<String>>? = null
 )
 
 /**

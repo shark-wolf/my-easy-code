@@ -36,6 +36,7 @@ import com.my.coder.settings.GeneratorSettings
 import com.intellij.openapi.components.service
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.ide.projectView.ProjectView
+import com.intellij.openapi.wm.WindowManager
 
 /**
  * 代码生成弹框：左侧为数据库表复选列表，右侧为配置区（包名/目录/模板选择/输出预览），
@@ -51,6 +52,10 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
     private val templateOutputFields = mutableListOf<TextFieldWithBrowseButton>()
     private val templateFileNameFields = mutableListOf<JBTextField>()
     private val templateExcludeFlags = mutableListOf<JCheckBox>()
+    private val templateTitleEmptyFlags = mutableMapOf<String, Boolean>()
+    private lateinit var templatesTabs: javax.swing.JTabbedPane
+    private var tablesExcludeTabsRef: javax.swing.JTabbedPane? = null
+    private val tableTemplateSelectedMap = mutableMapOf<String, MutableSet<String>>()
     private lateinit var templatePanel: JPanel
     private var allTemplates: List<TemplateItem> = emptyList()
     private val typeOverrideField = JTextArea(4, 40)
@@ -63,10 +68,18 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
     private val tableVoExcludeMap = mutableMapOf<String, MutableSet<String>>()
     private val tableBothExcludeMap = mutableMapOf<String, MutableSet<String>>()
     private val tableEnumFieldsMap = mutableMapOf<String, MutableSet<String>>()
+    private val tablesExcludeSubTabsMap = mutableMapOf<String, javax.swing.JTabbedPane>()
     private var vfsListener: com.intellij.openapi.vfs.VirtualFileListener? = null
     private var enumTemplateCombo: javax.swing.JComboBox<String>? = null
     private val tableEnumTplMap = mutableMapOf<String, MutableMap<String, String>>()
     private val tableEnumOutDirMap = mutableMapOf<String, MutableMap<String, String>>()
+    private val tableTemplateExcludeFlagsMap = mutableMapOf<String, MutableSet<String>>()
+    private val tableTemplateOutDirMap = mutableMapOf<String, MutableMap<String, String>>()
+    private val tableTemplateFileNameMap = mutableMapOf<String, MutableMap<String, String>>()
+    private val tableTitleEmptyFlagsMap = mutableMapOf<String, MutableMap<String, Boolean>>()
+    private val tableDefaultsApplied = mutableSetOf<String>()
+    private val tableColumnsCache = mutableMapOf<String, List<String>>()
+    private var lastTemplateRootPath: String? = null
     
     
     
@@ -100,7 +113,11 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         val savedTables = st.lastSelectedTables?.toSet()
         val leftNames = leftTables ?: fetchAllTables()
         leftNames.forEach { name ->
-            val initSel = if (savedTables != null && savedTables.isNotEmpty()) savedTables.contains(name) else (preselect.isEmpty() || preselect.contains(name))
+            val initSel = if (preselect.isNotEmpty()) {
+                preselect.contains(name)
+            } else if (savedTables != null && savedTables.isNotEmpty()) {
+                savedTables.contains(name)
+            } else true
             val cb = JCheckBox(name, initSel)
             cb.addActionListener { refreshTableTabs() }
             tableCheckboxes.add(cb)
@@ -144,12 +161,10 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         templatePanel = JPanel()
         templatePanel.layout = BoxLayout(templatePanel, BoxLayout.Y_AXIS)
         refreshTemplateList()
+        templatesTabs = javax.swing.JTabbedPane()
         rc.gridy = 4; rc.weighty = 0.5; rc.fill = GridBagConstraints.BOTH
-        val templatesScroll = JScrollPane(templatePanel)
-        templatesScroll.horizontalScrollBarPolicy = javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED
-        templatesScroll.verticalScrollBarPolicy = javax.swing.ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED
-        templatesScroll.border = BorderFactory.createTitledBorder("模板选择")
-        right.add(templatesScroll, rc)
+        templatesTabs.border = BorderFactory.createTitledBorder("模板选项")
+        right.add(templatesTabs, rc)
         rc.gridy = 5; rc.weighty = 0.5; rc.fill = GridBagConstraints.BOTH
         tableTabs.border = BorderFactory.createTitledBorder("排除字段和枚举字段")
         right.add(tableTabs, rc)
@@ -162,12 +177,19 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         importBtn.toolTipText = "将插件内置模板复制到 my-easy-code/templates/general，并创建 my-easy-code/templates/enums"
         bottomBar.add(importBtn)
         right.add(bottomBar, rc)
-        val onSelChange = {
+        val refreshTimer = javax.swing.Timer(120) {
+            refreshTemplateList()
+            refreshTemplatesTabs()
             refreshTableTabs()
-        }
-        applyBothCb.addActionListener { st.excludeApplyBoth = applyBothCb.isSelected; onSelChange.invoke() }
+        }.apply { isRepeats = false }
+        fun scheduleRefresh() { refreshTimer.restart() }
+        applyBothCb.addActionListener { st.excludeApplyBoth = applyBothCb.isSelected; scheduleRefresh() }
         useLombokCb.addActionListener { st.useLombok = useLombokCb.isSelected }
-        tableCheckboxes.forEach { cb -> cb.addActionListener { onSelChange.invoke() } }
+        tableCheckboxes.forEach { cb ->
+            cb.addActionListener { scheduleRefresh() }
+            cb.addItemListener { _ -> scheduleRefresh() }
+        }
+        refreshTemplatesTabs()
         refreshTableTabs()
         
 
@@ -187,9 +209,11 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         val wrapper = JPanel(BorderLayout())
         wrapper.border = BorderFactory.createEmptyBorder(6,6,6,6)
         wrapper.add(split, BorderLayout.CENTER)
-        val screen = java.awt.Toolkit.getDefaultToolkit().screenSize
-        val w = (screen.width * 0.85).toInt()
-        val h = (screen.height * 0.6).toInt()
+        val frame = WindowManager.getInstance().getFrame(project)
+        val gc = frame?.graphicsConfiguration ?: java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().defaultScreenDevice.defaultConfiguration
+        val bounds = gc.bounds
+        val w = (bounds.width * 0.85).toInt()
+        val h = (bounds.height * 0.9).toInt()
         wrapper.preferredSize = java.awt.Dimension(w, h)
         baseDirField.toolTipText = "生成代码的基准目录"
         packageNameField.toolTipText = "输入包名或选择包目录自动填充"
@@ -383,12 +407,15 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         val settings = project.service<GeneratorSettings>()
         val dirOverrides = settings.state.templateOutputs?.toMap()
         val fileNameOverrides = settings.state.templateFileNames?.toMap()
-        val excludeTplNames = templateCheckBoxes.mapIndexedNotNull { idx, cb ->
-            if (cb.isSelected && idx < templateExcludeFlags.size && templateExcludeFlags[idx].isSelected && idx < allTemplates.size) allTemplates[idx].name else null
-        }
+        val tableEnabledTemplates = tableTemplateSelectedMap.mapValues { it.value.toList() }.filterValues { it.isNotEmpty() }
+        val excludeTplNames = emptyList<String>()
+        val tableExcludeTpls = tableTemplateExcludeFlagsMap.mapValues { it.value.toList() }.filterValues { it.isNotEmpty() }
         val enumTplName = project.service<GeneratorSettings>().state.enumTemplateName
         val enumTplOverrides = tableEnumTplMap.mapValues { it.value.toMap() }.filterValues { it.isNotEmpty() }
         val enumOutDirOverrides = tableEnumOutDirMap.mapValues { it.value.toMap() }.filterValues { it.isNotEmpty() }
+        val tableDirOverrides = tableTemplateOutDirMap.mapValues { it.value.toMap() }.filterValues { it.isNotEmpty() }
+        val tableFileOverrides = tableTemplateFileNameMap.mapValues { it.value.toMap() }.filterValues { it.isNotEmpty() }
+        val tableTitleEmptyOverrides = tableTitleEmptyFlagsMap.mapValues { it.value.toMap() }.filterValues { it.isNotEmpty() }
         // 记住上一次的选择
         run {
             val st = settings.state
@@ -419,13 +446,21 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
             templateDirOverrides = dirOverrides,
             templateFileNameOverrides = fileNameOverrides,
             templateExcludeTemplates = excludeTplNames,
+            tableEnabledTemplates = if (tableEnabledTemplates.isNotEmpty()) tableEnabledTemplates else null,
+            tableTemplateExcludeTemplates = if (tableExcludeTpls.isNotEmpty()) tableExcludeTpls else null,
             enumTemplateName = enumTplName,
             tableEnumTemplateOverrides = if (enumTplOverrides.isNotEmpty()) enumTplOverrides else null,
-            tableEnumOutputDirOverrides = if (enumOutDirOverrides.isNotEmpty()) enumOutDirOverrides else null
+            tableEnumOutputDirOverrides = if (enumOutDirOverrides.isNotEmpty()) enumOutDirOverrides else null,
+            titleEmptyImplementTemplates = if (templateTitleEmptyFlags.isNotEmpty()) templateTitleEmptyFlags.toMap() else null,
+            tableTemplateDirOverrides = if (tableDirOverrides.isNotEmpty()) tableDirOverrides else null,
+            tableTemplateFileNameOverrides = if (tableFileOverrides.isNotEmpty()) tableFileOverrides else null,
+            tableTitleEmptyImplementTemplates = if (tableTitleEmptyOverrides.isNotEmpty()) tableTitleEmptyOverrides else null
         )
     }
 
     private fun fetchColumns(table: String): List<String> {
+        val cached = tableColumnsCache[table]
+        if (cached != null && cached.isNotEmpty()) return cached
         val facade = com.intellij.database.psi.DbPsiFacade.getInstance(project)
         val cols = mutableListOf<String>()
         facade.dataSources.forEach { src ->
@@ -435,7 +470,13 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
                 }
             }
         }
-        return cols.distinct().sorted()
+        val result = cols.distinct()
+        if (result.isNotEmpty()) {
+            tableColumnsCache[table] = result
+        } else {
+            tableColumnsCache.remove(table)
+        }
+        return result
     }
     fun templateRoot(): Path {
         val base = project.basePath ?: ""
@@ -622,6 +663,13 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
             center.add(JLabel("排除字段"))
             center.add(javax.swing.Box.createHorizontalStrut(JBUI.scale(4)))
             center.add(excludeCb)
+            center.add(javax.swing.Box.createHorizontalStrut(JBUI.scale(16)))
+            center.add(JLabel("空实现"))
+            center.add(javax.swing.Box.createHorizontalStrut(JBUI.scale(4)))
+            val titleEmptyCb = JCheckBox("", templateTitleEmptyFlags[t.name] == true)
+            titleEmptyCb.toolTipText = "勾选后在模板变量 isEmptyImpl 为 true"
+            titleEmptyCb.addActionListener { templateTitleEmptyFlags[t.name] = titleEmptyCb.isSelected }
+            center.add(titleEmptyCb)
             row.add(center, java.awt.BorderLayout.CENTER)
             templatePanel.add(row)
         }
@@ -660,6 +708,130 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         }
         return sb.toString()
     }
+    private fun refreshTemplatesTabs() {
+        val rootNow = templateRoot().toString()
+        if (allTemplates.isEmpty() || rootNow != (lastTemplateRootPath ?: "")) {
+            allTemplates = scanTemplates(templateRoot()).filterNot { it.name.equals("enum", true) }
+            lastTemplateRootPath = rootNow
+        }
+        templatesTabs.removeAll()
+        // 取消全局选项，仅保留每表模板选项卡
+        val tables = selectedTableNames()
+        tables.forEach { table ->
+            val selectedSet = tableTemplateSelectedMap.getOrPut(table) { mutableSetOf() }
+            if (selectedSet.isEmpty()) selectedSet.addAll(allTemplates.map { it.name })
+            val outDirMap = tableTemplateOutDirMap.getOrPut(table) { mutableMapOf() }
+            val fileNameMap = tableTemplateFileNameMap.getOrPut(table) { mutableMapOf() }
+            val titleFlags = tableTitleEmptyFlagsMap.getOrPut(table) { mutableMapOf() }
+            val excludeFlags = tableTemplateExcludeFlagsMap.getOrPut(table) { mutableSetOf() }
+            val panel = JPanel()
+            panel.layout = BoxLayout(panel, BoxLayout.Y_AXIS)
+            val settingsState = project.service<GeneratorSettings>().state
+            val pkg = packageNameField.text.ifBlank { inferPackage() }
+            val baseDir = baseDirField.text.ifBlank { project.basePath ?: "" }
+            val pkgPath = pkg.replace('.', '/')
+            val prefix = tablePrefixField.text.trim()
+            val baseName = if (prefix.isNotEmpty() && table.startsWith(prefix)) table.removePrefix(prefix) else table
+            val entityName = toCamelUpper(baseName)
+            allTemplates.forEach { t ->
+                val row = JPanel(java.awt.BorderLayout())
+                val cb = JCheckBox(t.name, selectedSet.contains(t.name))
+                row.add(cb, java.awt.BorderLayout.WEST)
+                val center = JPanel()
+                center.layout = BoxLayout(center, BoxLayout.X_AXIS)
+                val pathField = TextFieldWithBrowseButton()
+                val globalOutRaw = settingsState.templateOutputs?.get(t.name)
+                var p = (globalOutRaw ?: suggestOutput(t.name, t.fileType))
+                p = p.replace("\${baseDir}", baseDir)
+                p = p.replace("\${packagePath}", pkgPath)
+                p = p.replace("\${packageName}", pkg)
+                p = p.replace("\${entityName}", entityName)
+                p = p.replace("\${tableName}", baseName)
+                pathField.text = outDirMap[t.name] ?: p
+                pathField.textField.columns = 43
+                pathField.preferredSize = java.awt.Dimension(JBUI.scale(624), JBUI.scale(28))
+                pathField.maximumSize = java.awt.Dimension(JBUI.scale(624), JBUI.scale(28))
+                pathField.toolTipText = "设置该模板的保存路径（支持占位符）"
+                pathField.addBrowseFolderListener("选择保存目录", null, project, com.intellij.openapi.fileChooser.FileChooserDescriptorFactory.createSingleFolderDescriptor())
+                pathField.textField.document.addDocumentListener(object : javax.swing.event.DocumentListener {
+                    private fun save() { outDirMap[t.name] = pathField.text.trim() }
+                    override fun insertUpdate(e: javax.swing.event.DocumentEvent?) { save() }
+                    override fun removeUpdate(e: javax.swing.event.DocumentEvent?) { save() }
+                    override fun changedUpdate(e: javax.swing.event.DocumentEvent?) { save() }
+                })
+                val ext = extensionFor(t.fileType)
+                val rawBase = if (t.name.equals("mapperXml", true)) "mapper" else t.name
+                val baseName0 = rawBase.replaceFirstChar { it.uppercaseChar() }
+                val globalFileRaw = settingsState.templateFileNames?.get(t.name)
+                val rawName = globalFileRaw ?: ("\${entityName}" + baseName0 + "." + ext)
+                val defFile = rawName.replace("\${entityName}", entityName).replace("\${tableName}", table)
+                val fileNameField = JBTextField((fileNameMap[t.name] ?: defFile))
+                fileNameField.columns = 13
+                fileNameField.preferredSize = java.awt.Dimension(JBUI.scale(176), JBUI.scale(28))
+                fileNameField.maximumSize = java.awt.Dimension(JBUI.scale(176), JBUI.scale(28))
+                fileNameField.toolTipText = "设置生成文件名（不含目录）"
+                fileNameField.document.addDocumentListener(object : javax.swing.event.DocumentListener {
+                    private fun save() { fileNameMap[t.name] = fileNameField.text.trim() }
+                    override fun insertUpdate(e: javax.swing.event.DocumentEvent?) { save() }
+                    override fun removeUpdate(e: javax.swing.event.DocumentEvent?) { save() }
+                    override fun changedUpdate(e: javax.swing.event.DocumentEvent?) { save() }
+                })
+                val excludeInitial = excludeFlags.contains(t.name) || t.name.equals("dto", true) || t.name.equals("vo", true)
+                val excludeCb = JCheckBox("", excludeInitial)
+                excludeCb.toolTipText = "勾选后该模板参与排除字段设置（针对当前表）"
+                excludeCb.addActionListener { 
+                    if (excludeCb.isSelected) excludeFlags.add(t.name) else excludeFlags.remove(t.name)
+                    refreshTableTabs()
+                }
+                if (excludeInitial && !excludeFlags.contains(t.name)) excludeFlags.add(t.name)
+                val titleDefault = (titleFlags[t.name] ?: templateTitleEmptyFlags[t.name] ?: false)
+                val titleEmptyCb = JCheckBox("", titleDefault)
+                titleEmptyCb.toolTipText = "勾选后在模板变量 isEmptyImpl 为 true（针对当前表）"
+                titleEmptyCb.addActionListener { titleFlags[t.name] = titleEmptyCb.isSelected }
+                center.add(JLabel("保存路径"))
+                center.add(javax.swing.Box.createHorizontalStrut(JBUI.scale(8)))
+                center.add(pathField)
+                center.add(javax.swing.Box.createHorizontalStrut(JBUI.scale(8)))
+                center.add(JLabel("文件名"))
+                center.add(javax.swing.Box.createHorizontalStrut(JBUI.scale(8)))
+                center.add(fileNameField)
+                center.add(javax.swing.Box.createHorizontalStrut(JBUI.scale(16)))
+                center.add(JLabel("排除字段"))
+                center.add(javax.swing.Box.createHorizontalStrut(JBUI.scale(4)))
+                center.add(excludeCb)
+                center.add(javax.swing.Box.createHorizontalStrut(JBUI.scale(16)))
+                center.add(JLabel("空实现"))
+                center.add(javax.swing.Box.createHorizontalStrut(JBUI.scale(4)))
+                center.add(titleEmptyCb)
+                cb.addActionListener {
+                    if (cb.isSelected) {
+                        selectedSet.add(t.name)
+                    } else {
+                        selectedSet.remove(t.name)
+                        excludeFlags.remove(t.name)
+                        titleFlags.remove(t.name)
+                        for (k in 0 until center.componentCount) {
+                            val comp = center.getComponent(k)
+                            if (comp is JCheckBox) comp.isSelected = false
+                        }
+                        refreshTableTabs()
+                    }
+                }
+                row.add(center, java.awt.BorderLayout.CENTER)
+                panel.add(row)
+            }
+            val sp = JScrollPane(panel)
+            sp.horizontalScrollBarPolicy = javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
+            templatesTabs.addTab(table, sp)
+        }
+        templatesTabs.addChangeListener {
+            val idx = templatesTabs.selectedIndex
+            if (idx >= 0) {
+                tablesExcludeTabsRef?.selectedIndex = idx
+            }
+        }
+        templatesTabs.revalidate(); templatesTabs.repaint()
+    }
     private fun toCamelUpper(name: String): String {
         val parts = name.lowercase().split('_')
         val b = StringBuilder()
@@ -685,20 +857,31 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
 
     private fun refreshTableTabs() {
         val tables = selectedTableNames()
-        tableTabs.removeAll()
-        val tablesExcludeTabs = javax.swing.JTabbedPane()
-        val tablesEnumTabs = javax.swing.JTabbedPane()
-        val chosenTemplateNames = templateCheckBoxes.mapIndexedNotNull { idx, cb ->
-            if (cb.isSelected && idx < templateExcludeFlags.size && templateExcludeFlags[idx].isSelected && idx < allTemplates.size) allTemplates[idx].name else null
+        val prevMainIdx = tablesExcludeTabsRef?.selectedIndex ?: -1
+        val prevSubIdx = mutableMapOf<String, Int>().apply {
+            tablesExcludeSubTabsMap.forEach { (k, v) -> this[k] = v.selectedIndex }
         }
+        if (tables.isEmpty()) {
+            tableColumnsCache.clear()
+        }
+        tableTabs.removeAll()
+        tablesExcludeSubTabsMap.clear()
+        val tablesExcludeTabs = javax.swing.JTabbedPane()
+        tablesExcludeTabsRef = tablesExcludeTabs
+        val tablesEnumTabs = javax.swing.JTabbedPane()
         tables.forEach { table ->
             val cols = fetchColumns(table)
             val dtoSel = tableDtoExcludeMap.getOrPut(table) { mutableSetOf() }
             val voSel = tableVoExcludeMap.getOrPut(table) { mutableSetOf() }
             val bothSel = tableBothExcludeMap.getOrPut(table) { mutableSetOf() }
-            run {
+            val chosenTemplateNames = tableTemplateExcludeFlagsMap.getOrPut(table) { mutableSetOf() }.toList()
+            if (!tableDefaultsApplied.contains(table)) {
+                val st = project.service<GeneratorSettings>().state
+                val dtoBase = st.dtoExclude?.map { it.lowercase() }?.toSet() ?: emptySet()
+                val voBase = st.voExclude?.map { it.lowercase() }?.toSet() ?: emptySet()
                 val defaults = setOf("is_deleted","update_time","create_time","update_by","create_by")
-                val present = cols.filter { defaults.contains(it.lowercase()) }.toSet()
+                val baseSet = defaults + dtoBase + voBase
+                val present = cols.filter { baseSet.contains(it.lowercase()) }.toSet()
                 if (applyBothCb.isSelected) {
                     dtoSel.addAll(present); voSel.addAll(present); bothSel.addAll(present)
                 } else {
@@ -710,8 +893,10 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
                         }
                     }
                 }
+                tableDefaultsApplied.add(table)
             }
             val subTabs = javax.swing.JTabbedPane()
+            tablesExcludeSubTabsMap[table] = subTabs
             fun onToggle(tplName: String, col: String, selected: Boolean) {
                 if (applyBothCb.isSelected) {
                     if (selected) {
@@ -778,8 +963,7 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
             val settingsState = project.service<GeneratorSettings>().state
             val pkg = packageNameField.text.ifBlank { inferPackage() }
             val baseDir = baseDirField.text.ifBlank { project.basePath ?: "" }
-            val pkgPath = pkg.replace('.', '/')
-            val defaultEnumDir = java.nio.file.Path.of(baseDir).resolve("src/main/java").resolve(pkgPath).resolve("enums").toString()
+            val defaultEnumDir = "\${baseDir}/src/main/java/\${packagePath}/enums/"
             cols.forEach { cName ->
                 val row = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 8, 0))
                 val ecb = JCheckBox(cName, enumSel.contains(cName))
@@ -788,6 +972,10 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
                 val lbl = JLabel("选择枚举模板")
                 val remember = enumTpls[cName] ?: settingsState.enumTemplateName
                 if (!remember.isNullOrBlank()) combo.selectedItem = remember
+                if (ecb.isSelected) {
+                    val sel0 = combo.selectedItem?.toString()
+                    if (!sel0.isNullOrBlank()) enumTpls[cName] = sel0
+                }
                 combo.isVisible = ecb.isSelected
                 lbl.isVisible = ecb.isSelected
                 val dirLbl = JLabel("保存路径")
@@ -805,7 +993,14 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
                 dirField.isVisible = ecb.isSelected
                 dirLbl.isVisible = ecb.isSelected
                 ecb.addActionListener {
-                    if (ecb.isSelected) enumSel.add(cName) else enumSel.remove(cName)
+                    if (ecb.isSelected) {
+                        enumSel.add(cName)
+                        val sel0 = combo.selectedItem?.toString()
+                        if (!sel0.isNullOrBlank()) enumTpls[cName] = sel0
+                    } else {
+                        enumSel.remove(cName)
+                        enumTpls.remove(cName)
+                    }
                     combo.isVisible = ecb.isSelected
                     lbl.isVisible = ecb.isSelected
                     dirField.isVisible = ecb.isSelected
@@ -838,6 +1033,17 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         }
         tableTabs.addTab("排除字段", tablesExcludeTabs)
         tableTabs.addTab("枚举字段", tablesEnumTabs)
+        tablesExcludeTabs.addChangeListener {
+            val idx = tablesExcludeTabs.selectedIndex
+            if (idx >= 0) templatesTabs.selectedIndex = idx
+        }
+        if (prevMainIdx >= 0 && prevMainIdx < tablesExcludeTabs.tabCount) {
+            tablesExcludeTabs.selectedIndex = prevMainIdx
+        }
+        prevSubIdx.forEach { (tbl, idx) ->
+            val st = tablesExcludeSubTabsMap[tbl]
+            if (st != null && idx >= 0 && idx < st.tabCount) st.selectedIndex = idx
+        }
         tableTabs.revalidate(); tableTabs.repaint()
     }
     private fun listEnumTemplates(): List<String> {
@@ -872,14 +1078,10 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
 
     private fun selectedTemplates(): List<TemplateItem> {
         if (allTemplates.isEmpty()) allTemplates = scanTemplates(templateRoot())
-        val list = mutableListOf<TemplateItem>()
-        templateCheckBoxes.forEachIndexed { i, cb ->
-            if (cb.isSelected && i < allTemplates.size && i < templateOutputFields.size) {
-                val base = allTemplates[i]
-                list.add(TemplateItem(base.name, base.engine, base.content, base.file, base.outputPath, base.fileType))
-            }
-        }
-        return list
+        val names = mutableSetOf<String>()
+        tableTemplateSelectedMap.values.forEach { names.addAll(it) }
+        if (names.isEmpty()) names.addAll(allTemplates.map { it.name })
+        return allTemplates.filter { names.contains(it.name) }
     }
 
     private fun parseMapping(text: String): Map<String, String> {

@@ -28,9 +28,9 @@ class GeneratorSettings : PersistentStateComponent<GeneratorSettings.State> {
         var stripTablePrefix: String? = null
         var templateOutputs: MutableMap<String, String>? = mutableMapOf()
         var templateFileNames: MutableMap<String, String>? = mutableMapOf()
-        var enumTemplateName: String? = null
         var lastSelectedTables: MutableSet<String>? = mutableSetOf()
         var lastSelectedTemplates: MutableSet<String>? = mutableSetOf()
+        var enumTemplateName: String? = null
     }
 
     class TemplateScheme {

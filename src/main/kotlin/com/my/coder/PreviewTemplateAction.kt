@@ -26,7 +26,11 @@ class PreviewTemplateAction : AnAction(), DumbAware {
     override fun update(e: AnActionEvent) {
         val project = e.project
         val file = e.getData(CommonDataKeys.VIRTUAL_FILE)
-        val ok = project != null && file != null && file.extension?.lowercase() == "ftl" && file.path.contains("${Path.of(project!!.basePath ?: "").resolve("my-easy-code").resolve("templates")}".replace('\\', '/'))
+        val ok = project != null && file != null && file.extension?.lowercase() == "ftl" && run {
+            val base = "${Path.of(project!!.basePath ?: "").resolve("my-easy-code").resolve("templates")}".replace('\\','/')
+            val fp = file.path.replace('\\','/')
+            fp.contains(base)
+        }
         e.presentation.isEnabledAndVisible = ok
     }
     override fun actionPerformed(e: AnActionEvent) {
