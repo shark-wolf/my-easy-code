@@ -44,7 +44,7 @@ import com.intellij.openapi.wm.WindowManager
  */
 class QuickGenerateDialog(private val project: Project, private val initialSelectedNames: List<String>, private val leftTitle: String? = null, private val leftTables: List<String>? = null) : DialogWrapper(project) {
     private val baseDirField = TextFieldWithBrowseButton()
-    private val packageNameField = TextFieldWithBrowseButton()
+    private val packageNameField = JBTextField()
     private val tablePrefixField = JBTextField()
     
     private val templateRootField = TextFieldWithBrowseButton()
@@ -55,6 +55,7 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
     private val templateTitleEmptyFlags = mutableMapOf<String, Boolean>()
     private lateinit var templatesTabs: javax.swing.JTabbedPane
     private var tablesExcludeTabsRef: javax.swing.JTabbedPane? = null
+    private var tablesEnumTabsRef: javax.swing.JTabbedPane? = null
     private val tableTemplateSelectedMap = mutableMapOf<String, MutableSet<String>>()
     private lateinit var templatePanel: JPanel
     private var allTemplates: List<TemplateItem> = emptyList()
@@ -136,8 +137,8 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         rc.insets = Insets(8,12,8,12)
         rc.gridx = 0; rc.gridy = 0; rc.fill = GridBagConstraints.HORIZONTAL; rc.weightx = 1.0
         val pkgRow = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 8, 0))
-        packageNameField.textField.columns = 20
-        packageNameField.preferredSize = java.awt.Dimension(JBUI.scale(300), JBUI.scale(28))
+        packageNameField.columns = 32
+        packageNameField.preferredSize = java.awt.Dimension(JBUI.scale(477), JBUI.scale(28))
         val preLabel = JLabel("删除表名前缀")
         tablePrefixField.columns = 12
         tablePrefixField.preferredSize = java.awt.Dimension(JBUI.scale(200), JBUI.scale(28))
@@ -216,7 +217,7 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         val h = (bounds.height * 0.9).toInt()
         wrapper.preferredSize = java.awt.Dimension(w, h)
         baseDirField.toolTipText = "生成代码的基准目录"
-        packageNameField.toolTipText = "输入包名或选择包目录自动填充"
+        packageNameField.toolTipText = "输入包名"
         tablePrefixField.toolTipText = "生成实体名时删除该前缀（如 t_ 或 tbl_）"
         templateRootField.toolTipText = "模板所在目录，支持项目/my-easy-code/templates"
         baseDirField.addBrowseFolderListener(
@@ -225,19 +226,7 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
             project,
             com.intellij.openapi.fileChooser.FileChooserDescriptorFactory.createSingleFolderDescriptor()
         )
-        packageNameField.addBrowseFolderListener(
-            "选择包目录",
-            null,
-            project,
-            com.intellij.openapi.fileChooser.FileChooserDescriptorFactory.createSingleFolderDescriptor()
-        )
-        val pkgDoc2 = packageNameField.textField.document
-        pkgDoc2.addDocumentListener(object : javax.swing.event.DocumentListener {
-            override fun insertUpdate(e: javax.swing.event.DocumentEvent?) { updatePackageFromChooser() }
-            override fun removeUpdate(e: javax.swing.event.DocumentEvent?) { updatePackageFromChooser() }
-            override fun changedUpdate(e: javax.swing.event.DocumentEvent?) { updatePackageFromChooser() }
-        })
-        packageNameField.textField.document.addDocumentListener(object : javax.swing.event.DocumentListener {
+        packageNameField.document.addDocumentListener(object : javax.swing.event.DocumentListener {
             private fun save() { st.packageName = packageNameField.text.trim() }
             override fun insertUpdate(e: javax.swing.event.DocumentEvent?) { save() }
             override fun removeUpdate(e: javax.swing.event.DocumentEvent?) { save() }
@@ -373,17 +362,6 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         if (l != null) vm.removeVirtualFileListener(l)
         vfsListener = null
         super.dispose()
-    }
-    private fun updatePackageFromChooser() {
-        val raw = packageNameField.text.trim().replace('\\','/')
-        if (raw.isEmpty()) return
-        val marker = "/src/main/java/"
-        val pkg = if (raw.contains(marker)) {
-            raw.substringAfter(marker).trim('/').replace('/','.')
-        } else if (raw.contains('/')) {
-            raw.substringAfterLast("/src/main/java").trim('/').replace('/','.')
-        } else raw
-        packageNameField.text = pkg
     }
     /**
      * 汇总弹框中的用户输入为生成配置对象。
@@ -741,16 +719,11 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
                 center.layout = BoxLayout(center, BoxLayout.X_AXIS)
                 val pathField = TextFieldWithBrowseButton()
                 val globalOutRaw = settingsState.templateOutputs?.get(t.name)
-                var p = (globalOutRaw ?: suggestOutput(t.name, t.fileType))
-                p = p.replace("\${baseDir}", baseDir)
-                p = p.replace("\${packagePath}", pkgPath)
-                p = p.replace("\${packageName}", pkg)
-                p = p.replace("\${entityName}", entityName)
-                p = p.replace("\${tableName}", baseName)
+                val p = (globalOutRaw ?: suggestOutput(t.name, t.fileType))
                 pathField.text = outDirMap[t.name] ?: p
-                pathField.textField.columns = 43
-                pathField.preferredSize = java.awt.Dimension(JBUI.scale(624), JBUI.scale(28))
-                pathField.maximumSize = java.awt.Dimension(JBUI.scale(624), JBUI.scale(28))
+                pathField.textField.columns = 37
+                pathField.preferredSize = java.awt.Dimension(JBUI.scale(530), JBUI.scale(28))
+                pathField.maximumSize = java.awt.Dimension(JBUI.scale(530), JBUI.scale(28))
                 pathField.toolTipText = "设置该模板的保存路径（支持占位符）"
                 pathField.addBrowseFolderListener("选择保存目录", null, project, com.intellij.openapi.fileChooser.FileChooserDescriptorFactory.createSingleFolderDescriptor())
                 pathField.textField.document.addDocumentListener(object : javax.swing.event.DocumentListener {
@@ -766,9 +739,9 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
                 val rawName = globalFileRaw ?: ("\${entityName}" + baseName0 + "." + ext)
                 val defFile = rawName.replace("\${entityName}", entityName).replace("\${tableName}", table)
                 val fileNameField = JBTextField((fileNameMap[t.name] ?: defFile))
-                fileNameField.columns = 13
-                fileNameField.preferredSize = java.awt.Dimension(JBUI.scale(176), JBUI.scale(28))
-                fileNameField.maximumSize = java.awt.Dimension(JBUI.scale(176), JBUI.scale(28))
+                fileNameField.columns = 20
+                fileNameField.preferredSize = java.awt.Dimension(JBUI.scale(264), JBUI.scale(28))
+                fileNameField.maximumSize = java.awt.Dimension(JBUI.scale(264), JBUI.scale(28))
                 fileNameField.toolTipText = "设置生成文件名（不含目录）"
                 fileNameField.document.addDocumentListener(object : javax.swing.event.DocumentListener {
                     private fun save() { fileNameMap[t.name] = fileNameField.text.trim() }
@@ -828,6 +801,7 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
             val idx = templatesTabs.selectedIndex
             if (idx >= 0) {
                 tablesExcludeTabsRef?.selectedIndex = idx
+                tablesEnumTabsRef?.selectedIndex = idx
             }
         }
         templatesTabs.revalidate(); templatesTabs.repaint()
@@ -858,6 +832,7 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
     private fun refreshTableTabs() {
         val tables = selectedTableNames()
         val prevMainIdx = tablesExcludeTabsRef?.selectedIndex ?: -1
+        val prevEnumIdx = tablesEnumTabsRef?.selectedIndex ?: -1
         val prevSubIdx = mutableMapOf<String, Int>().apply {
             tablesExcludeSubTabsMap.forEach { (k, v) -> this[k] = v.selectedIndex }
         }
@@ -869,6 +844,7 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         val tablesExcludeTabs = javax.swing.JTabbedPane()
         tablesExcludeTabsRef = tablesExcludeTabs
         val tablesEnumTabs = javax.swing.JTabbedPane()
+        tablesEnumTabsRef = tablesEnumTabs
         tables.forEach { table ->
             val cols = fetchColumns(table)
             val dtoSel = tableDtoExcludeMap.getOrPut(table) { mutableSetOf() }
@@ -1037,8 +1013,15 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
             val idx = tablesExcludeTabs.selectedIndex
             if (idx >= 0) templatesTabs.selectedIndex = idx
         }
+        tablesEnumTabs.addChangeListener {
+            val idx = tablesEnumTabs.selectedIndex
+            if (idx >= 0) templatesTabs.selectedIndex = idx
+        }
         if (prevMainIdx >= 0 && prevMainIdx < tablesExcludeTabs.tabCount) {
             tablesExcludeTabs.selectedIndex = prevMainIdx
+        }
+        if (prevEnumIdx >= 0 && prevEnumIdx < tablesEnumTabs.tabCount) {
+            tablesEnumTabs.selectedIndex = prevEnumIdx
         }
         prevSubIdx.forEach { (tbl, idx) ->
             val st = tablesExcludeSubTabsMap[tbl]

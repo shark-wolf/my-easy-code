@@ -699,6 +699,13 @@ object Generator {
         }
         tablesAdj.forEach { t ->
             cfgEff.templates.forEach { tmpl ->
+                run {
+                    val enabledForTable = cfgEff.tableEnabledTemplates?.get(t.name)
+                    if (enabledForTable != null && enabledForTable.isNotEmpty()) {
+                        val ok = enabledForTable.any { it.equals(tmpl.name, true) }
+                        if (!ok) return@forEach
+                    }
+                }
                 if (!cfgEff.generateMapper && tmpl.name.equals("mapper", true)) return@forEach
                 if (!cfgEff.generateMapperXml && tmpl.name.equals("mapperXml", true)) return@forEach
                 val bothEx = cfg.tableBothExclude?.get(t.name) ?: emptyList()
