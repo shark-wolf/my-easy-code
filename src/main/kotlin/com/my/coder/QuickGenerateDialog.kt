@@ -63,11 +63,10 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
     private val columnTypeOverrideField = JTextArea(4, 40)
     private val importBtn = JButton("导入插件模板到项目根目录")
     private val tableCheckboxes = mutableListOf<JCheckBox>()
-    private val applyBothCb = JCheckBox("排除字段一起生效（限已选中排除的模板）", false)
     private val tableTabs = javax.swing.JTabbedPane()
     private val tableDtoExcludeMap = mutableMapOf<String, MutableSet<String>>()
     private val tableVoExcludeMap = mutableMapOf<String, MutableSet<String>>()
-    private val tableBothExcludeMap = mutableMapOf<String, MutableSet<String>>()
+    private val tableTplExcludeMap = mutableMapOf<String, MutableMap<String, MutableSet<String>>>()
     private val tableEnumFieldsMap = mutableMapOf<String, MutableSet<String>>()
     private val tablesExcludeSubTabsMap = mutableMapOf<String, javax.swing.JTabbedPane>()
     private var vfsListener: com.intellij.openapi.vfs.VirtualFileListener? = null
@@ -173,7 +172,6 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         rc.gridy = 6; rc.weighty = 0.0; rc.fill = GridBagConstraints.HORIZONTAL
         val bottomBar = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 8, 0))
         bottomBar.add(useLombokCb)
-        bottomBar.add(applyBothCb)
         importBtn.text = "导入模板"
         importBtn.icon = com.intellij.icons.AllIcons.Actions.Download
         importBtn.toolTipText = "将插件内置模板复制到 my-easy-code/templates/general，并创建 my-easy-code/templates/enums"
@@ -185,7 +183,6 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
             refreshTableTabs()
         }.apply { isRepeats = false }
         fun scheduleRefresh() { refreshTimer.restart() }
-        applyBothCb.addActionListener { st.excludeApplyBoth = applyBothCb.isSelected; scheduleRefresh() }
         useLombokCb.addActionListener { st.useLombok = useLombokCb.isSelected }
         tableCheckboxes.forEach { cb ->
             cb.addActionListener { scheduleRefresh() }
@@ -240,13 +237,6 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
             override fun changedUpdate(e: javax.swing.event.DocumentEvent?) { save() }
         })
         useLombokCb.isSelected = st.useLombok
-        applyBothCb.isSelected = st.excludeApplyBoth
-        applyBothCb.addActionListener {
-            if (applyBothCb.isSelected) {
-                unifyExcludesAcrossTabs()
-                refreshTableTabs()
-            }
-        }
         typeOverrideField.toolTipText = "按数据库类型覆盖 Java 类型，每行 type=JavaType"
         columnTypeOverrideField.toolTipText = "按列名覆盖 Java 类型，每行 column=JavaType"
         importBtn.addActionListener {
@@ -381,7 +371,9 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         val colOv = emptyMap<String, String>()
         val tableDtoEx = tableDtoExcludeMap.mapValues { it.value.toList() }.filterValues { it.isNotEmpty() }
         val tableVoEx = tableVoExcludeMap.mapValues { it.value.toList() }.filterValues { it.isNotEmpty() }
-        val tableBothEx = tableBothExcludeMap.mapValues { it.value.toList() }.filterValues { it.isNotEmpty() }
+        val tableTplColEx = tableTplExcludeMap.mapValues { entry ->
+            entry.value.mapValues { it.value.toList() }.filterValues { it.isNotEmpty() }
+        }.filterValues { it.isNotEmpty() }
         val enumSel = tableEnumFieldsMap.mapValues { it.value.toList() }.filterValues { it.isNotEmpty() }
         val settings = project.service<GeneratorSettings>()
         val dirOverrides = settings.state.templateOutputs?.toMap()
@@ -417,8 +409,8 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
             generateMapperXml = true,
             tableDtoExclude = if (tableDtoEx.isNotEmpty()) tableDtoEx else null,
             tableVoExclude = if (tableVoEx.isNotEmpty()) tableVoEx else null,
-            tableBothExclude = if (tableBothEx.isNotEmpty()) tableBothEx else null,
-            excludeApplyBoth = applyBothCb.isSelected,
+            tableBothExclude = null,
+            excludeApplyBoth = false,
             applyMapperMapping = false,
             stripTablePrefix = tablePrefixField.text.trim().ifBlank { null },
             tableEnumFields = if (enumSel.isNotEmpty()) enumSel else null,
@@ -427,6 +419,7 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
             templateExcludeTemplates = excludeTplNames,
             tableEnabledTemplates = if (tableEnabledTemplates.isNotEmpty()) tableEnabledTemplates else null,
             tableTemplateExcludeTemplates = if (tableExcludeTpls.isNotEmpty()) tableExcludeTpls else null,
+            tableTemplateColumnExcludes = if (tableTplColEx.isNotEmpty()) tableTplColEx else null,
             enumTemplateName = enumTplName,
             tableEnumTemplateOverrides = if (enumTplOverrides.isNotEmpty()) enumTplOverrides else null,
             tableEnumOutputDirOverrides = if (enumOutDirOverrides.isNotEmpty()) enumOutDirOverrides else null,
@@ -755,7 +748,22 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
                 val excludeCb = JCheckBox("", excludeInitial)
                 excludeCb.toolTipText = "勾选后该模板参与排除字段设置（针对当前表）"
                 excludeCb.addActionListener { 
-                    if (excludeCb.isSelected) excludeFlags.add(t.name) else excludeFlags.remove(t.name)
+                    if (excludeCb.isSelected) {
+                        excludeFlags.add(t.name)
+                        val colsNow = fetchColumns(table)
+                        val defaults = setOf("is_deleted","update_time","create_time","update_by","create_by")
+                        val present = colsNow.filter { defaults.contains(it.lowercase()) }.toSet()
+                        when (t.name.lowercase()) {
+                            "dto" -> tableDtoExcludeMap.getOrPut(table) { mutableSetOf() }.addAll(present)
+                            "vo" -> tableVoExcludeMap.getOrPut(table) { mutableSetOf() }.addAll(present)
+                            else -> {
+                                val mp = tableTplExcludeMap.getOrPut(table) { mutableMapOf() }
+                                mp.getOrPut(t.name) { mutableSetOf() }.addAll(present)
+                            }
+                        }
+                    } else {
+                        excludeFlags.remove(t.name)
+                    }
                     refreshTableTabs()
                 }
                 if (excludeInitial && !excludeFlags.contains(t.name)) excludeFlags.add(t.name)
@@ -840,19 +848,6 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         }
         return b.toString()
     }
-    private fun unifyExcludesAcrossTabs() {
-        val tables = selectedTableNames()
-        tables.forEach { table ->
-            val dtoSel = tableDtoExcludeMap.getOrPut(table) { mutableSetOf() }
-            val voSel = tableVoExcludeMap.getOrPut(table) { mutableSetOf() }
-            val bothSel = tableBothExcludeMap.getOrPut(table) { mutableSetOf() }
-            val union = mutableSetOf<String>()
-            union.addAll(dtoSel); union.addAll(voSel); union.addAll(bothSel)
-            dtoSel.clear(); dtoSel.addAll(union)
-            voSel.clear(); voSel.addAll(union)
-            bothSel.clear(); bothSel.addAll(union)
-        }
-    }
     fun selectedTableNames(): List<String> = tableCheckboxes.filter { it.isSelected }.map { it.text }
 
     private fun refreshTableTabs() {
@@ -875,7 +870,7 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
             val cols = fetchColumns(table)
             val dtoSel = tableDtoExcludeMap.getOrPut(table) { mutableSetOf() }
             val voSel = tableVoExcludeMap.getOrPut(table) { mutableSetOf() }
-            val bothSel = tableBothExcludeMap.getOrPut(table) { mutableSetOf() }
+            val tplSel = tableTplExcludeMap.getOrPut(table) { mutableMapOf() }
             val chosenTemplateNames = tableTemplateExcludeFlagsMap.getOrPut(table) { mutableSetOf() }.toList()
             if (!tableDefaultsApplied.contains(table)) {
                 val st = project.service<GeneratorSettings>().state
@@ -884,15 +879,11 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
                 val defaults = setOf("is_deleted","update_time","create_time","update_by","create_by")
                 val baseSet = defaults + dtoBase + voBase
                 val present = cols.filter { baseSet.contains(it.lowercase()) }.toSet()
-                if (applyBothCb.isSelected) {
-                    dtoSel.addAll(present); voSel.addAll(present); bothSel.addAll(present)
-                } else {
-                    chosenTemplateNames.forEach { name ->
-                        when (name.lowercase()) {
-                            "dto" -> dtoSel.addAll(present)
-                            "vo" -> voSel.addAll(present)
-                            else -> bothSel.addAll(present)
-                        }
+                chosenTemplateNames.forEach { name ->
+                    when (name.lowercase()) {
+                        "dto" -> dtoSel.addAll(present)
+                        "vo" -> voSel.addAll(present)
+                        else -> tplSel.getOrPut(name) { mutableSetOf() }.addAll(present)
                     }
                 }
                 tableDefaultsApplied.add(table)
@@ -900,31 +891,12 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
             val subTabs = javax.swing.JTabbedPane()
             tablesExcludeSubTabsMap[table] = subTabs
             fun onToggle(tplName: String, col: String, selected: Boolean) {
-                if (applyBothCb.isSelected) {
-                    if (selected) {
-                        bothSel.add(col); dtoSel.add(col); voSel.add(col)
-                    } else {
-                        bothSel.remove(col); dtoSel.remove(col); voSel.remove(col)
-                    }
-                    val union = mutableSetOf<String>().apply {
-                        addAll(dtoSel); addAll(voSel); addAll(bothSel)
-                    }
-                    for (i in 0 until subTabs.tabCount) {
-                        val comp = subTabs.getComponentAt(i)
-                        val scroll = comp as? JScrollPane
-                        val panel = (scroll?.viewport?.view as? JPanel) ?: continue
-                        for (j in 0 until panel.componentCount) {
-                            val c0 = panel.getComponent(j)
-                            if (c0 is JCheckBox) {
-                                c0.isSelected = union.contains(c0.text)
-                            }
-                        }
-                    }
-                } else {
-                    when (tplName.lowercase()) {
-                        "dto" -> if (selected) dtoSel.add(col) else dtoSel.remove(col)
-                        "vo" -> if (selected) voSel.add(col) else voSel.remove(col)
-                        else -> if (selected) bothSel.add(col) else bothSel.remove(col)
+                when (tplName.lowercase()) {
+                    "dto" -> if (selected) dtoSel.add(col) else dtoSel.remove(col)
+                    "vo" -> if (selected) voSel.add(col) else voSel.remove(col)
+                    else -> {
+                        val set = tplSel.getOrPut(tplName) { mutableSetOf() }
+                        if (selected) set.add(col) else set.remove(col)
                     }
                 }
             }
@@ -934,7 +906,7 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
                     val initSelected = when (name.lowercase()) {
                         "dto" -> dtoSel.contains(c)
                         "vo" -> voSel.contains(c)
-                        else -> bothSel.contains(c)
+                        else -> tplSel[name]?.contains(c) == true
                     }
                     val cb = JCheckBox(c, initSelected)
                     cb.addActionListener { onToggle(name, c, cb.isSelected) }
@@ -949,11 +921,7 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
             run {
                 val lockIdx = intArrayOf(0)
                 subTabs.addChangeListener {
-                    if (applyBothCb.isSelected) {
-                        subTabs.selectedIndex = lockIdx[0]
-                    } else {
-                        lockIdx[0] = subTabs.selectedIndex
-                    }
+                    lockIdx[0] = subTabs.selectedIndex
                 }
             }
             tablesExcludeTabs.addTab(table, subTabs)

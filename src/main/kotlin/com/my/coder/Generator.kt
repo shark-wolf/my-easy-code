@@ -711,18 +711,13 @@ object Generator {
                 }
                 if (!cfgEff.generateMapper && tmpl.name.equals("mapper", true)) return@forEach
                 if (!cfgEff.generateMapperXml && tmpl.name.equals("mapperXml", true)) return@forEach
-                val bothEx = cfg.tableBothExclude?.get(t.name) ?: emptyList()
                 val dtoBase = cfg.dtoExclude ?: emptyList()
                 val voBase = cfg.voExclude ?: emptyList()
-                val unionBase = if (cfg.excludeApplyBoth) (dtoBase + voBase).distinct() else null
+                val perTpl = cfg.tableTemplateColumnExcludes?.get(t.name)?.get(tmpl.name) ?: emptyList()
                 val exclude = when (tmpl.name.lowercase()) {
-                    "dto" -> (unionBase ?: dtoBase) +
-                            bothEx +
-                            (cfg.tableDtoExclude?.get(t.name) ?: emptyList())
-                    "vo" -> (unionBase ?: voBase) +
-                            bothEx +
-                            (cfg.tableVoExclude?.get(t.name) ?: emptyList())
-                    else -> (unionBase ?: emptyList()) + bothEx
+                    "dto" -> dtoBase + (cfg.tableDtoExclude?.get(t.name) ?: emptyList()) + perTpl
+                    "vo" -> voBase + (cfg.tableVoExclude?.get(t.name) ?: emptyList()) + perTpl
+                    else -> perTpl
                 }
                 val imps = t.columns.mapNotNull {
                     val jt = it.javaType

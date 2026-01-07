@@ -37,7 +37,8 @@ data class GeneratorConfig(
     val tableTemplateDirOverrides: Map<String, Map<String, String>>? = null,
     val tableTemplateFileNameOverrides: Map<String, Map<String, String>>? = null,
     val tableTitleEmptyImplementTemplates: Map<String, Map<String, Boolean>>? = null,
-    val tableTemplateExcludeTemplates: Map<String, List<String>>? = null
+    val tableTemplateExcludeTemplates: Map<String, List<String>>? = null,
+    val tableTemplateColumnExcludes: Map<String, Map<String, List<String>>>? = null
 )
 
 /**
