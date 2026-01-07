@@ -81,6 +81,7 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
     private val tableDefaultsApplied = mutableSetOf<String>()
     private val tableColumnsCache = mutableMapOf<String, List<String>>()
     private var lastTemplateRootPath: String? = null
+    private var highlightedRow: JPanel? = null
     
     
     
@@ -713,6 +714,7 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
             val entityName = toCamelUpper(baseName)
             allTemplates.forEach { t ->
                 val row = JPanel(java.awt.BorderLayout())
+                row.isOpaque = true
                 val cb = JCheckBox(t.name, selectedSet.contains(t.name))
                 row.add(cb, java.awt.BorderLayout.WEST)
                 val center = JPanel()
@@ -776,6 +778,30 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
                 center.add(JLabel("空实现"))
                 center.add(javax.swing.Box.createHorizontalStrut(JBUI.scale(4)))
                 center.add(titleEmptyCb)
+                fun highlightRow(r: JPanel) {
+                    val prev = highlightedRow
+                    if (prev != null) prev.background = panel.background
+                    r.background = JBColor(java.awt.Color(0xFFF7D6), java.awt.Color(0x3A3A3A))
+                    highlightedRow = r
+                }
+                cb.addFocusListener(object : java.awt.event.FocusAdapter() {
+                    override fun focusGained(e: java.awt.event.FocusEvent?) { highlightRow(row) }
+                })
+                pathField.textField.addFocusListener(object : java.awt.event.FocusAdapter() {
+                    override fun focusGained(e: java.awt.event.FocusEvent?) { highlightRow(row) }
+                })
+                fileNameField.addFocusListener(object : java.awt.event.FocusAdapter() {
+                    override fun focusGained(e: java.awt.event.FocusEvent?) { highlightRow(row) }
+                })
+                excludeCb.addFocusListener(object : java.awt.event.FocusAdapter() {
+                    override fun focusGained(e: java.awt.event.FocusEvent?) { highlightRow(row) }
+                })
+                titleEmptyCb.addFocusListener(object : java.awt.event.FocusAdapter() {
+                    override fun focusGained(e: java.awt.event.FocusEvent?) { highlightRow(row) }
+                })
+                row.addMouseListener(object : java.awt.event.MouseAdapter() {
+                    override fun mousePressed(e: java.awt.event.MouseEvent?) { highlightRow(row) }
+                })
                 cb.addActionListener {
                     if (cb.isSelected) {
                         selectedSet.add(t.name)

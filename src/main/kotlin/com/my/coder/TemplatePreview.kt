@@ -26,6 +26,7 @@ import java.util.concurrent.TimeUnit
 
 object TemplatePreview {
     fun open(project: Project, file: VirtualFile) {
+        // 预览入口：根据当前模板与所选表，构建 Freemarker 数据上下文并渲染
         val st = project.service<GeneratorSettings>().state
         val pkg = st.packageName ?: "com.example"
         val baseDir = st.baseDir ?: project.basePath ?: ""
@@ -68,6 +69,7 @@ object TemplatePreview {
         }
         val chosenRaw = if (!nameOverride.isNullOrBlank()) nameOverride!! else defaultFileNameFor(name, table.entityName)
         val defFile = expandPattern(chosenRaw, table.entityName, table.name)
+        // 配置 Freemarker 渲染器
         val fm = Configuration(Version("2.3.31"))
         fm.defaultEncoding = "UTF-8"
         fm.setNumberFormat("computer")
@@ -127,6 +129,7 @@ object TemplatePreview {
             val dlg = com.my.coder.ui.TemplatePreviewDialog(project, enumName + ".java", out.toString())
             dlg.show()
         } else {
+            // 自动导入：收集非 java.lang 类型以生成 import
             val imps = table.columns.mapNotNull {
                 val jt = it.javaType
                 val hasDot = jt.contains('.')

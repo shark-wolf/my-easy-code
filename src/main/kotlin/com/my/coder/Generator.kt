@@ -572,6 +572,7 @@ object Generator {
     /**
      * 渲染并写出所有模板文件：动态导入、路径占位符展开、错误收集、VFS 刷新与 PSI 格式化。
      */
+    // 主生成流程：准备配置 → 生成枚举 → 渲染各模板 → 写文件与格式化
     private fun generate(project: Project, cfg: GeneratorConfig, tables: List<TableMeta>, templateBase: java.nio.file.Path) {
         // 计算基础输出目录与生效配置（不再合并 mapper.yml）
         val base = cfg.baseDir ?: project.basePath ?: ""
@@ -590,12 +591,14 @@ object Generator {
         }
         // 不再生成 mapper.yml 的类型定义文件
         // Freemarker 配置
+        // 配置 Freemarker 渲染器
         val fm = Configuration(Version("2.3.31"))
         fm.defaultEncoding = "UTF-8"
         fm.setNumberFormat("computer")
         var generatedCount = 0
         val errors = mutableListOf<String>()
         // 先为选中的枚举字段生成枚举类型
+        // 先生成枚举类（按列备注解析 enumItems 并渲染枚举模板）
         if (enumSelMap.isNotEmpty()) {
             val pkgPath = cfgEff.packageName.replace('.', '/')
             val enumBaseDir = Path.of(base).resolve("src/main/java").resolve(pkgPath).resolve("enums")
