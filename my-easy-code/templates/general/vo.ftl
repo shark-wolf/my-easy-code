@@ -3,6 +3,7 @@ package ${filePackage};
 import lombok.Data;
 </#if>
 import java.io.Serializable;
+import java.io.Serial;
 <#if voImports?? && (voImports?size > 0)>
 <#list voImports as im>
 import ${im};

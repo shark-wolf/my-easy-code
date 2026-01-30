@@ -1,10 +1,12 @@
 package ${filePackage};
 <#if useLombok>
 import lombok.Data;
+import lombok.Builder;
 </#if>
 import java.io.Serializable;
-<#if voImports?? && (voImports?size > 0)>
-<#list voImports as im>
+import java.io.Serial;
+<#if entityImports?? && (entityImports?size > 0)>
+<#list entityImports as im>
 import ${im};
 </#list>
 </#if>
@@ -14,6 +16,7 @@ import ${im};
 </#if>
 <#if useLombok>
 @Data
+@Builder
 </#if>
 public class ${className} implements Serializable {
     @Serial
@@ -26,4 +29,13 @@ public class ${className} implements Serializable {
     private ${c.javaType?replace('^.*\\.', '', 'r')} ${c.nameCamel};
 </#if>
 </#list>
+
+<#if !useLombok>
+<#list table.columns as c>
+<#if !(exclude?seq_contains(c.name))>
+    public ${c.javaType?replace('^.*\\.', '', 'r')} get${c.nameCamel?cap_first}() { return ${c.nameCamel}; }
+    public void set${c.nameCamel?cap_first}(${c.javaType?replace('^.*\\.', '', 'r')} ${c.nameCamel}) { this.${c.nameCamel} = ${c.nameCamel}; }
+</#if>
+</#list>
+</#if>
 }

@@ -1,16 +1,25 @@
 <idea-plugin>
   <id>com.my.coder</id>
   <name>My-Easy-Code</name>
-  <vendor email="dev@example.com">Neo</vendor>
-  <version>1.0.0</version>
-  <description>
-  Generate MyBatis code with custom templates and output paths.
-  github: https://github.com/shark-wolf/my-easy-code
-  </description>
+  <vendor email="dev@example.com" url="https://github.com/shark-wolf/my-easy-code">Neo</vendor>
+  <version>1.0.0.1</version>
+  <description><![CDATA[
+  Generate MyBatis code with custom templates and output paths.<br/>
+  <a href="https://github.com/shark-wolf/my-easy-code">GitHub Repository</a>
+  ]]></description>
+  <change-notes><![CDATA[
+  Fixed compatibility issues for Plugin Marketplace submission:<br/>
+  - Resolved Kotlin stdlib conflicts<br/>
+  - Removed Java 14+ specific annotations for broader JDK compatibility<br/>
+  ]]></change-notes>
+
   <depends>com.intellij.modules.platform</depends>
   <depends>com.intellij.database</depends>
+
+  <resource-bundle>messages.MyEasyCodeBundle</resource-bundle>
+
   <extensions defaultExtensionNs="com.intellij">
-    <projectConfigurable instance="com.my.coder.settings.GeneratorSettingsConfigurable" id="com.my.coder.settings" displayName="MyBatis Generator"/>
+    <projectConfigurable instance="com.my.coder.settings.GeneratorSettingsConfigurable" id="com.my.coder.settings" displayName="MyBatis Generator" nonDefaultProject="true"/>
     <postStartupActivity implementation="com.my.coder.StartupImporter"/>
     <editorNotificationProvider implementation="com.my.coder.TemplatePreviewNotificationProvider"/>
   </extensions>

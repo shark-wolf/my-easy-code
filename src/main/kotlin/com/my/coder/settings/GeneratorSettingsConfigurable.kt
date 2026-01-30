@@ -111,7 +111,7 @@ class GeneratorSettingsConfigurable : Configurable {
             val name = schemeNameField.text.trim()
             if (name.isNotEmpty() && (0 until schemeListModel.size()).none { schemeListModel.get(it) == name }) {
                 schemeListModel.addElement(name)
-                schemeTemplates.putIfAbsent(name, mutableListOf())
+                schemeTemplates.put(name, mutableListOf())
             }
         }
         removeSchemeBtn.addActionListener {

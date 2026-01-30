@@ -827,7 +827,6 @@ object Generator {
                     return cfgEff.packageName
                 }
                 fun classNameFor(name: String): String {
-                    val tmpl2 = cfgEff.templates.firstOrNull { it.name.equals(name, true) }
                     val ov = (cfgEff.tableTemplateFileNameOverrides?.get(t.name)?.get(name))?.takeIf { it.isNotBlank() }
                         ?: cfgEff.templateFileNameOverrides?.get(name)
                     val fileType = if (name.equals("mapperXml", true)) "xml" else "java"

@@ -751,7 +751,7 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
                     if (excludeCb.isSelected) {
                         excludeFlags.add(t.name)
                         val colsNow = fetchColumns(table)
-                        val defaults = setOf("is_deleted","update_time","create_time","update_by","create_by")
+                        val defaults = setOf("is_deleted","update_time","create_time","update_by","create_by") 
                         val present = colsNow.filter { defaults.contains(it.lowercase()) }.toSet()
                         when (t.name.lowercase()) {
                             "dto" -> tableDtoExcludeMap.getOrPut(table) { mutableSetOf() }.addAll(present)
@@ -879,9 +879,11 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
                 val defaults = setOf("is_deleted","update_time","create_time","update_by","create_by")
                 val baseSet = defaults + dtoBase + voBase
                 val present = cols.filter { baseSet.contains(it.lowercase()) }.toSet()
+                val dtoEx = present.toMutableSet()
+                dtoEx.add("id")
                 chosenTemplateNames.forEach { name ->
                     when (name.lowercase()) {
-                        "dto" -> dtoSel.addAll(present)
+                        "dto" -> dtoSel.addAll(dtoEx)
                         "vo" -> voSel.addAll(present)
                         else -> tplSel.getOrPut(name) { mutableSetOf() }.addAll(present)
                     }
