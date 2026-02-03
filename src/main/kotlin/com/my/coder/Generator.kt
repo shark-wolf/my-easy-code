@@ -23,6 +23,7 @@ import com.intellij.database.psi.DbPsiFacade
 import com.intellij.psi.PsiManager
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.openapi.command.WriteCommandAction
+import com.intellij.openapi.util.IntellijInternalApi
 import com.intellij.psi.codeStyle.CodeStyleManager
 import java.io.StringReader
 import java.nio.charset.StandardCharsets
@@ -36,6 +37,7 @@ import java.util.Properties
  * 渲染 Freemarker 模板并输出到指定路径，同时进行 PSI 提交与格式化，并收集错误信息。
  */
 object Generator {
+    @IntellijInternalApi
     fun run(project: Project, yamlFile: VirtualFile) {
         run(project, yamlFile, null)
     }
@@ -43,6 +45,7 @@ object Generator {
     /**
      * 按 YAML 配置执行生成，可选指定覆盖的表名单（只生成这些表）。
      */
+    @IntellijInternalApi
     fun run(project: Project, yamlFile: VirtualFile, overrideTables: List<String>?) {
         val text = VfsUtil.loadText(yamlFile)
         val map = Yaml().load<Map<String, Any>>(text)
@@ -140,8 +143,8 @@ object Generator {
                     if (cfgEff.tables.include != null && cfgEff.tables.include.isNotEmpty() && !cfgEff.tables.include.contains(name)) continue
                     val cols = mutableListOf<ColumnMeta>()
                     for (c in DasUtil.getColumns(t)) {
-                        val typeName = c.dataType.typeName
-                        val size = c.dataType.size
+                        val typeName = c.dasType.toDataType().typeName
+                        val size = c.dasType.toDataType().size
                         val nullable = !c.isNotNull
                         val primary = DasUtil.isPrimary(c)
                         val mapped = tableColumnType[name to c.name]
@@ -340,8 +343,8 @@ object Generator {
         val tables = dbTables.map { t ->
             val cols = mutableListOf<ColumnMeta>()
             for (c in DasUtil.getColumns(t)) {
-                val typeName = c.dataType.typeName
-                val size = c.dataType.size
+                val typeName = c.dasType.toDataType().typeName
+                val size = c.dasType.toDataType().size
                 val nullable = !c.isNotNull
                 val primary = DasUtil.isPrimary(c)
                 val mapped = tableColumnType[t.name to c.name]

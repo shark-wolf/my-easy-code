@@ -36,6 +36,7 @@ import com.my.coder.settings.GeneratorSettings
 import com.intellij.openapi.components.service
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.ide.projectView.ProjectView
+import com.intellij.openapi.util.IntellijInternalApi
 import com.intellij.openapi.wm.WindowManager
 
 /**
@@ -101,6 +102,7 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
     /**
      * 构建中心 UI：分为左右两个区域，并按主题美化分割条与模块标题。
      */
+    @OptIn(IntellijInternalApi::class)
     override fun createCenterPanel(): JComponent {
         val settings = project.service<GeneratorSettings>()
         val st = settings.state
@@ -430,6 +432,7 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         )
     }
 
+    @IntellijInternalApi
     private fun fetchColumns(table: String): List<String> {
         val cached = tableColumnsCache[table]
         if (cached != null && cached.isNotEmpty()) return cached
@@ -680,6 +683,7 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         }
         return sb.toString()
     }
+    @OptIn(IntellijInternalApi::class)
     private fun refreshTemplatesTabs() {
         val rootNow = templateRoot().toString()
         if (allTemplates.isEmpty() || rootNow != (lastTemplateRootPath ?: "")) {
@@ -850,6 +854,7 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
     }
     fun selectedTableNames(): List<String> = tableCheckboxes.filter { it.isSelected }.map { it.text }
 
+    @OptIn(IntellijInternalApi::class)
     private fun refreshTableTabs() {
         val tables = selectedTableNames()
         val prevMainIdx = tablesExcludeTabsRef?.selectedIndex ?: -1
@@ -1041,6 +1046,7 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         }
     }
 
+    @IntellijInternalApi
     private fun fetchAllTables(): List<String> {
         val facade = com.intellij.database.psi.DbPsiFacade.getInstance(project)
         val list = mutableSetOf<String>()

@@ -13,6 +13,7 @@ import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
 import com.intellij.database.psi.DbPsiFacade
 import com.intellij.database.util.DasUtil
 import com.intellij.database.model.DasTable
+import com.intellij.openapi.util.IntellijInternalApi
 
 /**
  * 入口动作：从 IDEA Database 选中表启动生成。
@@ -25,6 +26,7 @@ class GenerateFromIdeaDatabaseAction : AnAction(), DumbAware {
         e.presentation.isEnabled = true
         e.presentation.isVisible = true
     }
+    @IntellijInternalApi
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
         val tables = collectSelectedTables(e)

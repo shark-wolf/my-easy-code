@@ -2,7 +2,7 @@
   <id>com.my.coder</id>
   <name>My-Easy-Code</name>
   <vendor email="dev@example.com" url="https://github.com/shark-wolf/my-easy-code">Neo</vendor>
-  <version>1.0.0.1</version>
+  <version>1.0.0.2</version>
   <description><![CDATA[
   Generate MyBatis code with custom templates and output paths.<br/>
   <a href="https://github.com/shark-wolf/my-easy-code">GitHub Repository</a>

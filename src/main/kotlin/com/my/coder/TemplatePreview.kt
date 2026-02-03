@@ -16,6 +16,7 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.actionSystem.LangDataKeys
 import com.intellij.ide.DataManager
+import com.intellij.openapi.util.IntellijInternalApi
 import freemarker.template.Configuration
 import freemarker.template.Template
 import freemarker.template.Version
@@ -25,6 +26,7 @@ import java.nio.file.Files
 import java.util.concurrent.TimeUnit
 
 object TemplatePreview {
+    @OptIn(IntellijInternalApi::class)
     fun open(project: Project, file: VirtualFile) {
         // 预览入口：根据当前模板与所选表，构建 Freemarker 数据上下文并渲染
         val st = project.service<GeneratorSettings>().state
@@ -272,14 +274,15 @@ object TemplatePreview {
             defaultPkg
         }
     }
+    @IntellijInternalApi
     private fun resolveTable(project: Project): TableMeta? {
         val sources = DbPsiFacade.getInstance(project).dataSources
         sources.forEach { src ->
             for (t in DasUtil.getTables(src.delegate)) {
                 val cols = mutableListOf<ColumnMeta>()
                 for (c in DasUtil.getColumns(t)) {
-                    val typeName = c.dataType.typeName
-                    val size = c.dataType.size
+                    val typeName = c.dasType.toDataType().typeName
+                    val size =c.dasType.toDataType().size
                     val nullable = !c.isNotNull
                     val primary = DasUtil.isPrimary(c)
                     val javaType = com.my.coder.type.TypeMapper.toJavaType(typeName, size ?: 0, nullable)
@@ -290,6 +293,7 @@ object TemplatePreview {
         }
         return null
     }
+    @IntellijInternalApi
     private fun resolveSelectedTable(project: Project): TableMeta? {
         val st = project.service<GeneratorSettings>().state
         val last = st.lastSelectedTables?.firstOrNull() ?: return null
@@ -299,8 +303,8 @@ object TemplatePreview {
                 if (t.name == last) {
                     val cols = mutableListOf<ColumnMeta>()
                     for (c in DasUtil.getColumns(t)) {
-                        val typeName = c.dataType.typeName
-                        val size = c.dataType.size
+                        val typeName = c.dasType.toDataType().typeName
+                        val size = c.dasType.toDataType().size
                         val nullable = !c.isNotNull
                         val primary = DasUtil.isPrimary(c)
                         val javaType = com.my.coder.type.TypeMapper.toJavaType(typeName, size ?: 0, nullable)
