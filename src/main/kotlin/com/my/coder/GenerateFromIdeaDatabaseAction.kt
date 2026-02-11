@@ -20,12 +20,28 @@ import com.intellij.openapi.util.IntellijInternalApi
  * - 收集 Database 视图选中的 DbTable
  * - 打开生成弹框 QuickGenerateDialog
  * - 按所选表执行生成
+ *
+ * @since 1.0.0
+ * @author Neo
  */
 class GenerateFromIdeaDatabaseAction : AnAction(), DumbAware {
+    /**
+     * 更新动作状态。
+     *
+     * @param e 动作事件
+     * @since 1.0.0
+     */
     override fun update(e: AnActionEvent) {
         e.presentation.isEnabled = true
         e.presentation.isVisible = true
     }
+    
+    /**
+     * 执行动作：打开生成对话框并处理用户选择。
+     *
+     * @param e 动作事件
+     * @since 1.0.0
+     */
     @IntellijInternalApi
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
@@ -61,6 +77,13 @@ class GenerateFromIdeaDatabaseAction : AnAction(), DumbAware {
         runGenerator(project, cfg, templateRoot, chosen)
     }
 
+    /**
+     * 获取数据库表所属的数据源或模式名称。
+     *
+     * @param t 数据库表对象
+     * @return 数据源或模式名称，如果无法获取则返回 null
+     * @since 1.0.0
+     */
     private fun dbNameOf(t: DbTable?): String? {
         if (t == null) return null
         return try {
@@ -91,6 +114,13 @@ class GenerateFromIdeaDatabaseAction : AnAction(), DumbAware {
             null
         } catch (_: Throwable) { null }
     }
+    /**
+     * 获取数据源的 JDBC URL。
+     *
+     * @param ds 数据源对象
+     * @return JDBC URL 字符串，如果无法获取则返回 null
+     * @since 1.0.0
+     */
     private fun jdbcUrlOf(ds: Any?): String? {
         if (ds == null) return null
         return try {
@@ -110,6 +140,13 @@ class GenerateFromIdeaDatabaseAction : AnAction(), DumbAware {
             null
         } catch (_: Throwable) { null }
     }
+    /**
+     * 从 JDBC URL 中解析数据库名称。
+     *
+     * @param url JDBC URL 字符串
+     * @return 解析出的数据库名称，如果无法解析则返回 null
+     * @since 1.0.0
+     */
     private fun parseDbFromUrl(url: String): String? {
         try {
             val u = url.lowercase()
@@ -138,6 +175,13 @@ class GenerateFromIdeaDatabaseAction : AnAction(), DumbAware {
         return null
     }
 
+    /**
+     * 收集在 Database 视图中选中的数据库表。
+     *
+     * @param e 动作事件
+     * @return 选中的数据库表列表
+     * @since 1.0.0
+     */
     private fun collectSelectedTables(e: AnActionEvent): List<DbTable> {
         val list = mutableListOf<DbTable>()
         val nav = e.getData(CommonDataKeys.NAVIGATABLE_ARRAY)
@@ -155,6 +199,15 @@ class GenerateFromIdeaDatabaseAction : AnAction(), DumbAware {
         return list.distinctBy { it.name }
     }
 
+    /**
+     * 运行代码生成器。
+     *
+     * @param project 当前项目实例
+     * @param cfg 生成器配置
+     * @param templateRoot 模板根目录路径
+     * @param tables 要生成的数据库表列表
+     * @since 1.0.0
+     */
     private fun runGenerator(project: Project, cfg: com.my.coder.config.GeneratorConfig, templateRoot: java.nio.file.Path, tables: List<DasTable>) {
         try {
             Generator.runFromIdeaDatabaseConfig(project, cfg, tables, templateRoot)

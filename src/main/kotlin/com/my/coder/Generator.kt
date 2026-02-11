@@ -35,8 +35,19 @@ import java.util.Properties
 /**
  * 代码生成核心入口：负责从 YAML/IDEA 数据源解析表结构、合并 mapper.yml 的类型映射/枚举定义，
  * 渲染 Freemarker 模板并输出到指定路径，同时进行 PSI 提交与格式化，并收集错误信息。
+ *
+ * @since 1.0.0
+ * @author Neo
  */
 object Generator {
+    
+    /**
+     * 按 YAML 配置执行生成，使用默认配置（生成所有表）。
+     *
+     * @param project 当前 IntelliJ 项目实例
+     * @param yamlFile 配置文件虚拟文件对象
+     * @since 1.0.0
+     */
     @IntellijInternalApi
     fun run(project: Project, yamlFile: VirtualFile) {
         run(project, yamlFile, null)
@@ -44,6 +55,11 @@ object Generator {
 
     /**
      * 按 YAML 配置执行生成，可选指定覆盖的表名单（只生成这些表）。
+     *
+     * @param project 当前 IntelliJ 项目实例
+     * @param yamlFile 配置文件虚拟文件对象
+     * @param overrideTables 要生成的表名列表，如果为 null 则生成所有表
+     * @since 1.0.0
      */
     @IntellijInternalApi
     fun run(project: Project, yamlFile: VirtualFile, overrideTables: List<String>?) {
@@ -263,6 +279,11 @@ object Generator {
 
     /**
      * IDEA 数据库视图右键入口：直接传入 DbTable 列表执行生成。
+     *
+     * @param project 当前 IntelliJ 项目实例
+     * @param yamlFile 配置文件虚拟文件对象
+     * @param dbTables 要生成的数据库表列表
+     * @since 1.0.0
      */
     fun runFromIdeaDatabase(project: Project, yamlFile: VirtualFile, dbTables: List<DbTable>) {
         val text = VfsUtil.loadText(yamlFile)
@@ -392,6 +413,12 @@ object Generator {
 
     /**
      * 以现有配置和模板根目录，针对 IDEA 的 DAS 表执行生成（无 YAML 读取）。
+     *
+     * @param project 当前 IntelliJ 项目实例
+     * @param cfg 生成器配置对象
+     * @param dbTables 要生成的数据库表列表
+     * @param templateBase 模板根目录路径
+     * @since 1.0.0
      */
     fun runFromIdeaDatabaseConfig(project: Project, cfg: GeneratorConfig, dbTables: List<DasTable>, templateBase: Path) {
         val mapperRoot = project.basePath?.let { Path.of(it).resolve("my-easy-code").resolve("mapper") }
@@ -503,6 +530,14 @@ object Generator {
 
     /**
      * 解析列对应的 Java 类型：优先按列覆盖、再按数据库类型覆盖，最后回退默认映射。
+     *
+     * @param typeName 数据库类型名称
+     * @param columnName 列名
+     * @param size 列大小
+     * @param nullable 是否允许为空
+     * @param cfg 生成器配置对象
+     * @return 对应的 Java 类型字符串
+     * @since 1.0.0
      */
     private fun resolveJavaType(typeName: String, columnName: String, size: Int, nullable: Boolean, cfg: GeneratorConfig): String {
         val byColumn = cfg.columnTypeOverride?.get(columnName)
@@ -514,6 +549,10 @@ object Generator {
 
     /**
      * 将 YAML 映射转换为生成配置对象，仅读取核心字段。
+     *
+     * @param m YAML 配置映射对象
+     * @return 转换后的生成器配置对象
+     * @since 1.0.0
      */
     private fun toConfig(m: Map<String, Any>): GeneratorConfig {
         val dbm = m["database"] as? Map<*, *>
@@ -548,6 +587,13 @@ object Generator {
 
     /**
      * 解析 JDBC 库中的所有表，支持 include/exclude 过滤。
+     *
+     * @param catalogs 数据库目录结果集
+     * @param schemas 数据库模式结果集
+     * @param tables 表配置对象
+     * @param conn 数据库连接
+     * @return 解析后的表名列表
+     * @since 1.0.0
      */
     private fun resolveTables(catalogs: java.sql.ResultSet, schemas: java.sql.ResultSet, tables: com.my.coder.config.Tables, conn: java.sql.Connection): List<String> {
         var names = mutableListOf<String>()
@@ -563,6 +609,11 @@ object Generator {
 
     /**
      * 获取主键列集合。
+     *
+     * @param meta 数据库元数据对象
+     * @param table 表名
+     * @return 主键列名集合
+     * @since 1.0.0
      */
     private fun primaryKeys(meta: java.sql.DatabaseMetaData, table: String): Set<String> {
         var set = mutableSetOf<String>()
@@ -574,6 +625,12 @@ object Generator {
 
     /**
      * 渲染并写出所有模板文件：动态导入、路径占位符展开、错误收集、VFS 刷新与 PSI 格式化。
+     *
+     * @param project 当前 IntelliJ 项目实例
+     * @param cfg 生成器配置对象
+     * @param tables 表元数据列表
+     * @param templateBase 模板根目录路径
+     * @since 1.0.0
      */
     // 主生成流程：准备配置 → 生成枚举 → 渲染各模板 → 写文件与格式化
     private fun generate(project: Project, cfg: GeneratorConfig, tables: List<TableMeta>, templateBase: java.nio.file.Path) {
@@ -602,107 +659,7 @@ object Generator {
         val errors = mutableListOf<String>()
         // 先为选中的枚举字段生成枚举类型
         // 先生成枚举类（按列备注解析 enumItems 并渲染枚举模板）
-        if (enumSelMap.isNotEmpty()) {
-            val pkgPath = cfgEff.packageName.replace('.', '/')
-            val enumBaseDir = Path.of(base).resolve("src/main/java").resolve(pkgPath).resolve("enums")
-            try { Files.createDirectories(enumBaseDir) } catch (_: Throwable) {}
-            tablesAdj.forEach { t ->
-                val selectedCols = enumSelMap[t.name] ?: emptyList()
-                selectedCols.forEach { col ->
-                    val enumName = "${t.entityName}${toCamelUpper(col)}Enum"
-                    val overrideDirRaw = cfgEff.tableEnumOutputDirOverrides?.get(t.name)?.get(col)
-                    val outDir = if (!overrideDirRaw.isNullOrBlank()) {
-                        val expanded = expandPath(overrideDirRaw!!, base, cfgEff.packageName, t)
-                        val ov = Path.of(expanded)
-                        val last = ov.fileName?.toString() ?: ""
-                        if (last.contains('.')) ov.parent ?: ov else ov
-                    } else enumBaseDir
-                    try { Files.createDirectories(outDir) } catch (_: Throwable) {}
-                    val target = outDir.resolve("$enumName.java")
-                    try {
-                        val tplNameRaw = (cfgEff.tableEnumTemplateOverrides?.get(t.name)?.get(col)) ?: cfgEff.enumTemplateName
-                        val tplName = tplNameRaw?.trim()
-                        val content: String = if (!tplName.isNullOrBlank() && tplName != "内置") {
-                            val baseProj = project.basePath
-                            val enumDir = if (baseProj != null) Path.of(baseProj).resolve("my-easy-code").resolve("templates").resolve("enums") else null
-                            val generalDir = if (baseProj != null) Path.of(baseProj).resolve("my-easy-code").resolve("templates").resolve("general") else null
-                            val tryName = tplName!!
-                            val tryNameFtl = if (tryName.lowercase().endsWith(".ftl")) tryName else "$tryName.ftl"
-                            val candidates = sequenceOf(
-                                enumDir?.resolve(tryName),
-                                enumDir?.resolve(tryNameFtl),
-                                generalDir?.resolve(tryName),
-                                generalDir?.resolve(tryNameFtl)
-                            ).filterNotNull().filter { Files.exists(it) }.toList()
-                            val f = candidates.firstOrNull()
-                            if (f != null) {
-                                val fm = freemarker.template.Configuration(freemarker.template.Configuration.DEFAULT_INCOMPATIBLE_IMPROVEMENTS)
-                                fm.setDefaultEncoding("UTF-8")
-                                fm.setNumberFormat("computer")
-                                fm.setTemplateExceptionHandler(freemarker.template.TemplateExceptionHandler.RETHROW_HANDLER)
-                                val colMeta = t.columns.firstOrNull { it.name == col }
-                                fun sanitizeEnumName(s: String): String {
-                                    val base = s.trim().replace('[', '_').replace(']', '_')
-                                        .replace('-', '_').replace('—','_').replace('－','_')
-                                        .replace(' ', '_').replace('.', '_').replace('/', '_')
-                                    val only = base.map { ch ->
-                                        if (ch.isLetterOrDigit() || ch == '_') ch else '_'
-                                    }.joinToString("")
-                                    val up = only.uppercase()
-                                    return if (up.isNotBlank()) up else "UNDEFINED"
-                                }
-                                fun parseEnumItems(comment: String?): List<Map<String, String>> {
-                                    if (comment.isNullOrBlank()) return emptyList()
-                                    val colonIdx = listOf('：', ':').map { ch -> comment.indexOf(ch) }.firstOrNull { it >= 0 } ?: -1
-                                    val src = if (colonIdx >= 0) comment.substring(colonIdx + 1) else comment
-                                    val text = src.replace('；', ',').replace('，', ',').replace(';', ',')
-                                    val parts = text.split(',').map { it.trim() }.filter { it.isNotEmpty() }
-                                    val items = mutableListOf<Map<String, String>>()
-                                    parts.forEach { p ->
-                                        val seg = p.split('-', '—', '－', ':').map { it.trim() }.filter { it.isNotEmpty() }
-                                        if (seg.size >= 2) {
-                                            val code = seg[0]
-                                            val label = seg.subList(1, seg.size).joinToString("-")
-                                            items += mapOf(
-                                                "code" to code,
-                                                "label" to label,
-                                                "name" to sanitizeEnumName(code)
-                                            )
-                                        }
-                                    }
-                                    return items
-                                }
-                                val enumItems = parseEnumItems(try { colMeta?.comment } catch (_: Throwable) { null })
-                                val data = mapOf(
-                                    "packageName" to cfgEff.packageName,
-                                    "enumPackage" to (cfgEff.packageName + ".enums"),
-                                    "filePackage" to (cfgEff.packageName + ".enums"),
-                                    "enumName" to enumName,
-                                    "className" to enumName,
-                                    "tableName" to t.name,
-                                    "columnName" to col,
-                                    "columnComment" to (try { colMeta?.comment } catch (_: Throwable) { null } ?: ""),
-                                    "enumItems" to enumItems
-                                )
-                                val template = Template(tplName, StringReader(Files.readString(f)), fm)
-                                val sw = java.io.StringWriter()
-                                template.process(data, sw)
-                                sw.toString()
-                            } else {
-                                errors += "枚举模板未找到: $tryName (表:${t.name}, 列:$col)"
-                                "package ${cfgEff.packageName}.enums;\n\npublic enum $enumName {\n\n}\n"
-                            }
-                        } else {
-                            "package ${cfgEff.packageName}.enums;\n\npublic enum $enumName {\n\n}\n"
-                        }
-                        Files.write(target, content.toByteArray(StandardCharsets.UTF_8))
-                        generatedCount++
-                        val vDir = LocalFileSystem.getInstance().refreshAndFindFileByIoFile(enumBaseDir.toFile())
-                        vDir?.refresh(false, true)
-                    } catch (_: Throwable) {}
-                }
-            }
-        }
+        generatedCount += generateEnumTypes(project, cfgEff, tablesAdj, base, errors)
         tablesAdj.forEach { t ->
             cfgEff.templates.forEach { tmpl ->
                 run {
@@ -955,6 +912,13 @@ object Generator {
 
     /**
      * 展开输出路径中的占位符。
+     *
+     * @param pattern 路径模式字符串
+     * @param base 基础路径
+     * @param pkg 包名
+     * @param t 表元数据对象
+     * @return 展开后的路径字符串
+     * @since 1.0.0
      */
     private fun expandPath(pattern: String, base: String, pkg: String, t: TableMeta): String {
         val pkgPath = pkg.replace('.', '/')
@@ -972,6 +936,13 @@ object Generator {
         return p
     }
 
+    /**
+     * 将下划线命名转换为大驼峰命名（首字母大写）。
+     *
+     * @param name 输入的字符串（通常以下划线分隔）
+     * @return 大驼峰命名的字符串
+     * @since 1.0.0
+     */
     private fun toCamelUpper(name: String): String {
         val parts = name.lowercase().split('_')
         val b = StringBuilder()
@@ -981,8 +952,195 @@ object Generator {
         return b.toString()
     }
 
+    /**
+     * 将下划线命名转换为小驼峰命名（首字母小写）。
+     *
+     * @param name 输入的字符串（通常以下划线分隔）
+     * @return 小驼峰命名的字符串
+     * @since 1.0.0
+     */
     private fun toCamelLower(name: String): String {
         val up = toCamelUpper(name)
         return up.replaceFirstChar { it.lowercaseChar() }
+    }
+    
+    /**
+     * 生成枚举类型文件。
+     *
+     * @param project 当前 IntelliJ 项目实例
+     * @param cfgEff 生效的配置
+     * @param tablesAdj 调整后的表列表
+     * @param base 基础路径
+     * @param errors 错误收集列表
+     * @return 生成的枚举文件数量
+     */
+    private fun generateEnumTypes(project: Project, cfgEff: GeneratorConfig, tablesAdj: List<TableMeta>, base: String, errors: MutableList<String>): Int {
+        var count = 0
+        val enumSelMap = cfgEff.tableEnumFields ?: emptyMap()
+        
+        if (enumSelMap.isNotEmpty()) {
+            val pkgPath = cfgEff.packageName.replace('.', '/')
+            val enumBaseDir = Path.of(base).resolve("src/main/java").resolve(pkgPath).resolve("enums")
+            try { Files.createDirectories(enumBaseDir) } catch (_: Throwable) {}
+            
+            tablesAdj.forEach { t ->
+                val selectedCols = enumSelMap[t.name] ?: emptyList()
+                selectedCols.forEach { col ->
+                    count += generateSingleEnumType(project, cfgEff, t, col, enumBaseDir, base, errors)
+                }
+            }
+        }
+        
+        return count
+    }
+    
+    /**
+     * 生成单个枚举类型文件。
+     *
+     * @param project 当前 IntelliJ 项目实例
+     * @param cfgEff 生效的配置
+     * @param table 表元数据
+     * @param col 列名
+     * @param enumBaseDir 枚举基础目录
+     * @param base 基础路径
+     * @param errors 错误收集列表
+     * @return 生成的文件数量（0或1）
+     */
+    private fun generateSingleEnumType(project: Project, cfgEff: GeneratorConfig, table: TableMeta, col: String, enumBaseDir: Path, base: String, errors: MutableList<String>): Int {
+        val enumName = "${table.entityName}${toCamelUpper(col)}Enum"
+        val overrideDirRaw = cfgEff.tableEnumOutputDirOverrides?.get(table.name)?.get(col)
+        val outDir = if (!overrideDirRaw.isNullOrBlank()) {
+            val expanded = expandPath(overrideDirRaw!!, base, cfgEff.packageName, table)
+            val ov = Path.of(expanded)
+            val last = ov.fileName?.toString() ?: ""
+            if (last.contains('.')) ov.parent ?: ov else ov
+        } else enumBaseDir
+        
+        try { Files.createDirectories(outDir) } catch (_: Throwable) {}
+        val target = outDir.resolve("$enumName.java")
+        
+        try {
+            val content = generateEnumContent(project, cfgEff, table, col, enumName, base, errors)
+            Files.write(target, content.toByteArray(StandardCharsets.UTF_8))
+            
+            val vDir = LocalFileSystem.getInstance().refreshAndFindFileByIoFile(enumBaseDir.toFile())
+            vDir?.refresh(false, true)
+            
+            return 1
+        } catch (_: Throwable) {}
+        
+        return 0
+    }
+    
+    /**
+     * 生成枚举内容。
+     *
+     * @param project 当前 IntelliJ 项目实例
+     * @param cfgEff 生效的配置
+     * @param table 表元数据
+     * @param col 列名
+     * @param enumName 枚举名称
+     * @param base 基础路径
+     * @param errors 错误收集列表
+     * @return 生成的枚举内容
+     */
+    private fun generateEnumContent(project: Project, cfgEff: GeneratorConfig, table: TableMeta, col: String, enumName: String, base: String, errors: MutableList<String>): String {
+        val tplNameRaw = (cfgEff.tableEnumTemplateOverrides?.get(table.name)?.get(col)) ?: cfgEff.enumTemplateName
+        val tplName = tplNameRaw?.trim()
+        
+        return if (!tplName.isNullOrBlank() && tplName != "内置") {
+            val baseProj = project.basePath
+            val enumDir = if (baseProj != null) Path.of(baseProj).resolve("my-easy-code").resolve("templates").resolve("enums") else null
+            val generalDir = if (baseProj != null) Path.of(baseProj).resolve("my-easy-code").resolve("templates").resolve("general") else null
+            val tryName = tplName!!
+            val tryNameFtl = if (tryName.lowercase().endsWith(".ftl")) tryName else "$tryName.ftl"
+            val candidates = sequenceOf(
+                enumDir?.resolve(tryName),
+                enumDir?.resolve(tryNameFtl),
+                generalDir?.resolve(tryName),
+                generalDir?.resolve(tryNameFtl)
+            ).filterNotNull().filter { Files.exists(it) }.toList()
+            val f = candidates.firstOrNull()
+            
+            if (f != null) {
+                val fm = freemarker.template.Configuration(freemarker.template.Configuration.DEFAULT_INCOMPATIBLE_IMPROVEMENTS)
+                fm.setDefaultEncoding("UTF-8")
+                fm.setNumberFormat("computer")
+                fm.setTemplateExceptionHandler(freemarker.template.TemplateExceptionHandler.RETHROW_HANDLER)
+                
+                val colMeta = table.columns.firstOrNull { it.name == col }
+                
+                val enumItems = parseEnumItems(try { colMeta?.comment } catch (_: Throwable) { null })
+                
+                val data = mapOf(
+                    "packageName" to cfgEff.packageName,
+                    "enumPackage" to (cfgEff.packageName + ".enums"),
+                    "filePackage" to (cfgEff.packageName + ".enums"),
+                    "enumName" to enumName,
+                    "className" to enumName,
+                    "tableName" to table.name,
+                    "columnName" to col,
+                    "columnComment" to (try { colMeta?.comment } catch (_: Throwable) { null } ?: ""),
+                    "enumItems" to enumItems
+                )
+                
+                val template = Template(tplName, StringReader(Files.readString(f)), fm)
+                val sw = java.io.StringWriter()
+                template.process(data, sw)
+                sw.toString()
+            } else {
+                errors += "枚举模板未找到: $tryName (表:${table.name}, 列:$col)"
+                "package ${cfgEff.packageName}.enums;\n\npublic enum $enumName {\n\n}\n"
+            }
+        } else {
+            "package ${cfgEff.packageName}.enums;\n\npublic enum $enumName {\n\n}\n"
+        }
+    }
+    
+    /**
+     * 解析枚举项。
+     *
+     * @param comment 列注释
+     * @return 解析后的枚举项列表
+     */
+    private fun parseEnumItems(comment: String?): List<Map<String, String>> {
+        if (comment.isNullOrBlank()) return emptyList()
+        val colonIdx = listOf('：', ':').map { ch -> comment.indexOf(ch) }.firstOrNull { it >= 0 } ?: -1
+        val src = if (colonIdx >= 0) comment.substring(colonIdx + 1) else comment
+        val text = src.replace('；', ',').replace('，', ',').replace(';', ',')
+        val parts = text.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+        val items = mutableListOf<Map<String, String>>()
+        
+        parts.forEach { p ->
+            val seg = p.split('-', '—', '－', ':').map { it.trim() }.filter { it.isNotEmpty() }
+            if (seg.size >= 2) {
+                val code = seg[0]
+                val label = seg.subList(1, seg.size).joinToString("-")
+                items += mapOf(
+                    "code" to code,
+                    "label" to label,
+                    "name" to sanitizeEnumName(code)
+                )
+            }
+        }
+        
+        return items
+    }
+    
+    /**
+     * 清理枚举名称。
+     *
+     * @param s 原始字符串
+     * @return 清理后的枚举名称
+     */
+    private fun sanitizeEnumName(s: String): String {
+        val base = s.trim().replace('[', '_').replace(']', '_')
+            .replace('-', '_').replace('—','_').replace('－','_')
+            .replace(' ', '_').replace('.', '_').replace('/', '_')
+        val only = base.map { ch ->
+            if (ch.isLetterOrDigit() || ch == '_') ch else '_'
+        }.joinToString("")
+        val up = only.uppercase()
+        return if (up.isNotBlank()) up else "UNDEFINED"
     }
 }

@@ -41,7 +41,14 @@ import com.intellij.openapi.wm.WindowManager
 
 /**
  * 代码生成弹框：左侧为数据库表复选列表，右侧为配置区（包名/目录/模板选择/输出预览），
- * 支持按表选择在 DTO/VO 中排除的字段，并提供“一起生效”开关控制作用范围。
+ * 支持按表选择在 DTO/VO 中排除的字段，并提供"一起生效"开关控制作用范围。
+ *
+ * @property project 当前 IntelliJ 项目实例
+ * @property initialSelectedNames 初始选中的表名列表
+ * @property leftTitle 左侧面板标题
+ * @property leftTables 左侧面板显示的表列表
+ * @since 1.0.0
+ * @author Neo
  */
 class QuickGenerateDialog(private val project: Project, private val initialSelectedNames: List<String>, private val leftTitle: String? = null, private val leftTables: List<String>? = null) : DialogWrapper(project) {
     private val baseDirField = TextFieldWithBrowseButton()
@@ -101,6 +108,9 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
     }
     /**
      * 构建中心 UI：分为左右两个区域，并按主题美化分割条与模块标题。
+     *
+     * @return 构建好的中心面板组件
+     * @since 1.0.0
      */
     @OptIn(IntellijInternalApi::class)
     override fun createCenterPanel(): JComponent {
@@ -358,6 +368,9 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
     }
     /**
      * 汇总弹框中的用户输入为生成配置对象。
+     *
+     * @return 生成器配置对象
+     * @since 1.0.0
      */
     fun config(): GeneratorConfig {
         val pkgInput = packageNameField.text.trim()
@@ -432,6 +445,13 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         )
     }
 
+    /**
+     * 获取指定表的所有列名。
+     *
+     * @param table 表名
+     * @return 表的列名列表
+     * @since 1.0.0
+     */
     @IntellijInternalApi
     private fun fetchColumns(table: String): List<String> {
         val cached = tableColumnsCache[table]
@@ -453,12 +473,22 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         }
         return result
     }
+    /**
+     * 获取模板根目录路径。
+     *
+     * @return 模板根目录路径
+     * @since 1.0.0
+     */
     fun templateRoot(): Path {
         val base = project.basePath ?: ""
         return Path.of(base).resolve("my-easy-code").resolve("templates").resolve("general")
     }
     /**
      * 扫描模板目录，识别 ftl 文件并推断模板名称与默认输出路径。
+     *
+     * @param root 模板根目录路径
+     * @return 扫描到的模板项列表
+     * @since 1.0.0
      */
     private fun scanTemplates(root: Path): List<TemplateItem> {
         if (!Files.exists(root)) return emptyList()
@@ -477,6 +507,10 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
     }
     /**
      * 根据文件名推断模板逻辑名称。
+     *
+     * @param fileName 文件名
+     * @return 推断出的模板逻辑名称
+     * @since 1.0.0
      */
     private fun guessName(fileName: String): String {
         val n = fileName.substringBeforeLast('.')
@@ -495,6 +529,11 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
     }
     /**
      * 根据模板名称返回默认输出路径模式（支持占位符）。
+     *
+     * @param name 模板名称
+     * @param fileType 文件类型
+     * @return 默认输出路径模式
+     * @since 1.0.0
      */
     private fun suggestOutput(name: String, fileType: String): String {
         return when (name) {
@@ -509,7 +548,21 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
             else -> "\${baseDir}/src/main/java/\${packagePath}/"
         }
     }
+    /**
+     * 根据模板名称获取默认文件类型。
+     *
+     * @param name 模板名称
+     * @return 默认文件类型（xml 或 java）
+     * @since 1.0.0
+     */
     private fun defaultTypeFor(name: String): String = if (name.equals("mapperXml", true)) "xml" else "java"
+    /**
+     * 根据文件类型获取文件扩展名。
+     *
+     * @param fileType 文件类型
+     * @return 对应的文件扩展名
+     * @since 1.0.0
+     */
     private fun extensionFor(fileType: String): String = when (fileType.lowercase()) {
         "java" -> "java"
         "xml" -> "xml"
@@ -517,12 +570,23 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         "groovy", "gvy" -> "groovy"
         else -> fileType.lowercase()
     }
+    /**
+     * 推断默认包名。
+     *
+     * @return 推断出的默认包名
+     * @since 1.0.0
+     */
     private fun inferPackage(): String {
         val base = project.basePath ?: return ""
         val p = Path.of(base).resolve("src/main/java")
         if (!Files.exists(p)) return ""
         return "com.example"
     }
+    /**
+     * 刷新模板列表，重新扫描模板目录并更新UI。
+     *
+     * @since 1.0.0
+     */
     private fun refreshTemplateList() {
         allTemplates = scanTemplates(templateRoot()).filterNot { it.name.equals("enum", true) }
         if (allTemplates.isEmpty()) {
@@ -651,6 +715,12 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         templatePanel.revalidate()
         templatePanel.repaint()
     }
+    /**
+     * 构建预览输出路径列表。
+     *
+     * @return 预览输出路径字符串
+     * @since 1.0.0
+     */
     private fun buildPreview(): String {
         val first = selectedTableNames().firstOrNull() ?: initialSelectedNames.firstOrNull() ?: ""
         val prefix = tablePrefixField.text.trim()
@@ -683,6 +753,11 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         }
         return sb.toString()
     }
+    /**
+     * 刷新模板选项卡，为每个选中的表创建模板配置选项卡。
+     *
+     * @since 1.0.0
+     */
     @OptIn(IntellijInternalApi::class)
     private fun refreshTemplatesTabs() {
         val rootNow = templateRoot().toString()
@@ -844,6 +919,13 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         }
         templatesTabs.revalidate(); templatesTabs.repaint()
     }
+    /**
+     * 将下划线命名转换为大驼峰命名（首字母大写）。
+     *
+     * @param name 输入的字符串（通常以下划线分隔）
+     * @return 大驼峰命名的字符串
+     * @since 1.0.0
+     */
     private fun toCamelUpper(name: String): String {
         val parts = name.lowercase().split('_')
         val b = StringBuilder()
@@ -852,8 +934,19 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         }
         return b.toString()
     }
+    /**
+     * 获取选中的表名列表。
+     *
+     * @return 选中的表名列表
+     * @since 1.0.0
+     */
     fun selectedTableNames(): List<String> = tableCheckboxes.filter { it.isSelected }.map { it.text }
 
+    /**
+     * 刷新表选项卡，更新排除字段和枚举字段的配置界面。
+     *
+     * @since 1.0.0
+     */
     @OptIn(IntellijInternalApi::class)
     private fun refreshTableTabs() {
         val tables = selectedTableNames()
@@ -1030,6 +1123,12 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         }
         tableTabs.revalidate(); tableTabs.repaint()
     }
+    /**
+     * 列出可用的枚举模板。
+     *
+     * @return 枚举模板名称列表
+     * @since 1.0.0
+     */
     private fun listEnumTemplates(): List<String> {
         val base = project.basePath ?: return listOf("内置")
         val dir = Path.of(base).resolve("my-easy-code").resolve("templates").resolve("enums")
@@ -1046,6 +1145,12 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         }
     }
 
+    /**
+     * 获取所有数据库表名列表。
+     *
+     * @return 数据库表名列表
+     * @since 1.0.0
+     */
     @IntellijInternalApi
     private fun fetchAllTables(): List<String> {
         val facade = com.intellij.database.psi.DbPsiFacade.getInstance(project)
@@ -1061,6 +1166,12 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
 
     
 
+    /**
+     * 获取选中的模板项列表。
+     *
+     * @return 选中的模板项列表
+     * @since 1.0.0
+     */
     private fun selectedTemplates(): List<TemplateItem> {
         if (allTemplates.isEmpty()) allTemplates = scanTemplates(templateRoot())
         val names = mutableSetOf<String>()
@@ -1069,6 +1180,13 @@ class QuickGenerateDialog(private val project: Project, private val initialSelec
         return allTemplates.filter { names.contains(it.name) }
     }
 
+    /**
+     * 解析映射文本为键值对映射。
+     *
+     * @param text 包含映射关系的文本，每行格式为 key=value
+     * @return 解析后的键值对映射
+     * @since 1.0.0
+     */
     private fun parseMapping(text: String): Map<String, String> {
         val m = linkedMapOf<String, String>()
         text.lines().forEach { line ->
