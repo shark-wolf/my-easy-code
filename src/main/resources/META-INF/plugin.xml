@@ -20,7 +20,7 @@
 
   <extensions defaultExtensionNs="com.intellij">
     <projectConfigurable instance="com.my.coder.settings.GeneratorSettingsConfigurable" id="com.my.coder.settings" displayName="MyBatis Generator" nonDefaultProject="true"/>
-    <postStartupActivity implementation="com.my.coder.StartupImporter"/>
+    <!-- <postStartupActivity implementation="com.my.coder.StartupImporter"/> -->
     <editorNotificationProvider implementation="com.my.coder.TemplatePreviewNotificationProvider"/>
   </extensions>
   <actions>
